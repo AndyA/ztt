@@ -247,7 +247,7 @@ test "parseExpr" {
         var output = w.toArrayList();
         defer output.deinit(gpa);
         // std.debug.print("{s}\n", .{output.items});
-        try testing.expect(std.mem.eql(u8, case.want, output.items));
+        try testing.expectEqualDeep(case.want, output.items);
     }
 }
 
