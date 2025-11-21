@@ -91,6 +91,12 @@ pub const Token = union(enum) {
     keyword: Keyword,
 };
 
+pub const Location = struct {
+    name: []const u8,
+    line: u32, // 1 based
+    column: u32, // 0 based
+};
+
 pub const TokenIter = struct {
     const Self = @This();
 
@@ -101,12 +107,6 @@ pub const TokenIter = struct {
     line_number: u32 = 1,
     line_start: u32 = 0,
     state: enum { TEXT, START, EXPR, COMMENT, BLOCK_COMMENT } = .TEXT,
-
-    pub const Location = struct {
-        name: []const u8,
-        line: u32, // 1 based
-        column: u32, // 0 based
-    };
 
     pub fn init(name: []const u8, src: []const u8) Self {
         return Self{ .name = name, .src = src };
@@ -481,6 +481,67 @@ test TokenIter {
 
     for (cases) |case| {
         var iter = TokenIter.init("test", case.src);
+        var tokens: std.ArrayList(T) = .empty;
+        defer tokens.deinit(gpa);
+        while (try iter.next()) |t| {
+            try tokens.append(gpa, t);
+        }
+        const got = try tokens.toOwnedSlice(gpa);
+        defer gpa.free(got);
+        try testing.expectEqualDeep(case.want, got);
+    }
+}
+
+const LocationToken = struct {
+    tok: Token,
+    loc: Location,
+};
+
+const LocationTokenIter = struct {
+    const Self = @This();
+
+    iter: TokenIter,
+
+    pub fn init(name: []const u8, src: []const u8) Self {
+        return Self{ .iter = TokenIter.init(name, src) };
+    }
+
+    pub fn next(self: *Self) !?LocationToken {
+        const loc = self.iter.getLocation();
+        const tok = try self.iter.next();
+        if (tok) |t|
+            return LocationToken{ .tok = t, .loc = loc };
+        return null;
+    }
+};
+
+test LocationTokenIter {
+    const gpa = testing.allocator;
+    const T = LocationToken;
+    const cases = &[_]struct { src: []const u8, want: []const T }{
+        .{ .src = "", .want = &[_]T{} },
+        .{ .src = "hello [% %] world", .want = &[_]T{
+            .{
+                .tok = .{ .literal = "hello " },
+                .loc = .{ .name = "test", .line = 1, .column = 0 },
+            },
+            .{
+                .tok = .{ .start = .{} },
+                .loc = .{ .name = "test", .line = 1, .column = 8 },
+            },
+            .{
+                .tok = .{ .end = .{} },
+                .loc = .{ .name = "test", .line = 1, .column = 8 },
+            },
+            .{
+                .tok = .{ .literal = " world" },
+                .loc = .{ .name = "test", .line = 1, .column = 11 },
+            },
+        } },
+    };
+
+    for (cases) |case| {
+        var iter = LocationTokenIter.init("test", case.src);
         var tokens: std.ArrayList(T) = .empty;
         defer tokens.deinit(gpa);
         while (try iter.next()) |t| {
