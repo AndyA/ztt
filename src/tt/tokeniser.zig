@@ -6,8 +6,7 @@ pub const TokerError = error{
     MissingQuote,
     UnexpectedEOF,
     SyntaxError,
-    InvalidCharacter,
-};
+} || std.fmt.ParseFloatError;
 
 pub const Keyword = enum {
     pub fn normalise(kw: Keyword) Keyword {
