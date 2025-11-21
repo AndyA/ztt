@@ -7,16 +7,12 @@ pub const ASTNode = union(enum) {
 
     block: []*const Node, // top level and block bodies
 
-    op1: struct {
-        op: Keyword,
-        arg: *const ASTNode,
-    },
+    symbol: []const u8,
+    ref: *const Node,
+    call: struct { method: *const Node, args: []*const Node },
 
-    op2: struct {
-        op: Keyword,
-        lhs: *const ASTNode,
-        rhs: *const ASTNode,
-    },
+    op1: struct { op: Keyword, arg: *const Node },
+    op2: struct { op: Keyword, lhs: *const Node, rhs: *const Node },
 
     IF: struct {
         cond: *const Node, // expr
@@ -27,8 +23,15 @@ pub const ASTNode = union(enum) {
     pub fn format(self: Node, w: *std.Io.Writer) std.Io.Writer.Error!void {
         switch (self) {
             .number => |n| try w.print("{d}", .{n}),
+            .symbol => |s| try w.print("{s}", .{s}),
+            .ref => |r| try w.print("${f}", .{r}),
             .op1 => |o| try w.print("{s}{f}", .{ @tagName(o.op), o.arg }),
-            .op2 => |o| try w.print("({f} {s} {f})", .{ o.lhs, @tagName(o.op), o.rhs }),
+            .op2 => |o| {
+                switch (o.op) {
+                    .@"." => try w.print("{f}.{f}", .{ o.lhs, o.rhs }),
+                    else => try w.print("({f} {s} {f})", .{ o.lhs, @tagName(o.op), o.rhs }),
+                }
+            },
             else => unreachable,
         }
     }
@@ -75,57 +78,23 @@ pub const ASTParser = struct {
         return false;
     }
 
-    fn parseAtom(self: *Self) ParserError!*const ASTNode {
-        const current = self.current.?.tok;
-        switch (current) {
-            .keyword => |kw| {
-                switch (kw) {
-                    .@"-" => |op| {
-                        try self.advance();
-                        const arg = try self.parseAtom();
-                        return try self.newNode(.{ .op1 = .{ .op = op, .arg = arg } });
-                    },
-                    .@"(" => {
-                        try self.advance();
-                        const res = try self.parseExpr();
-                        if (!self.nextKeywordIs(.@")"))
-                            return error.MissingParen;
-                        try self.advance();
-                        return res;
-                    },
-                    else => return error.SyntaxError,
-                }
-            },
-            .number => |n| {
-                const node = try self.newNode(.{ .number = n });
-                try self.advance();
-                return node;
-            },
-            else => return error.SyntaxError,
-        }
-    }
-
     const ParseFn = fn (*Self) ParserError!*const ASTNode;
 
-    fn allowed(comptime allow: []const Keyword, kw: Keyword) bool {
+    fn allowed(allow: []const Keyword, kw: Keyword) bool {
         for (allow) |k| if (k == kw) return true;
         return false;
     }
 
-    fn parseBinOp(
-        self: *Self,
-        comptime allow: []const Keyword,
-        comptime parseUp: ParseFn,
-    ) ParserError!*const ASTNode {
+    fn parseBinOp(self: *Self, allow: []const Keyword, parseUp: ParseFn) ParserError!*const ASTNode {
         var lhs = try parseUp(self);
         while (!self.eof) {
             switch (self.current.?.tok) {
-                .keyword => |kw| {
-                    if (allowed(allow, kw)) {
+                .keyword => |op| {
+                    if (allowed(allow, op)) {
                         try self.advance();
                         const rhs = try parseUp(self);
                         lhs = try self.newNode(.{ .op2 = .{
-                            .op = kw,
+                            .op = op,
                             .lhs = lhs,
                             .rhs = rhs,
                         } });
@@ -139,29 +108,113 @@ pub const ASTParser = struct {
         return lhs;
     }
 
-    fn parseMultiply(self: *Self) ParserError!*const ASTNode {
+    fn parseVar(self: *Self) ParserError!*const ASTNode {
+        switch (self.current.?.tok) {
+            .keyword => |kw| {
+                if (kw == .@"$") {
+                    try self.advance();
+                    const ref = try self.parseVar();
+                    return try self.newNode(.{ .ref = ref });
+                }
+                return ParserError.SyntaxError;
+            },
+            .symbol => |sym| {
+                try self.advance();
+                return try self.newNode(.{ .symbol = sym });
+            },
+            else => return ParserError.SyntaxError,
+        }
+    }
+
+    fn parseCall(self: *Self) ParserError!*const ASTNode {
+        // TODO
+        return try self.parseVar();
+    }
+
+    fn parseRef(self: *Self) ParserError!*const ASTNode {
+        return self.parseBinOp(&.{.@"."}, parseCall);
+    }
+
+    fn parseAtom(self: *Self) ParserError!*const ASTNode {
+        switch (self.current.?.tok) {
+            .keyword => |kw| {
+                switch (kw) {
+                    .@"-" => |op| {
+                        try self.advance();
+                        const arg = try self.parseAtom();
+                        return try self.newNode(.{ .op1 = .{ .op = op, .arg = arg } });
+                    },
+                    .@"(" => {
+                        try self.advance();
+                        const res = try self.parseExpr();
+                        if (!self.nextKeywordIs(.@")"))
+                            return ParserError.MissingParen;
+                        try self.advance();
+                        return res;
+                    },
+                    .@"$" => {
+                        return try self.parseRef();
+                    },
+                    else => return ParserError.SyntaxError,
+                }
+            },
+            .number => |n| {
+                const node = try self.newNode(.{ .number = n });
+                try self.advance();
+                return node;
+            },
+            .symbol => {
+                return try self.parseRef();
+            },
+            else => return ParserError.SyntaxError,
+        }
+    }
+
+    fn parseMulDiv(self: *Self) ParserError!*const ASTNode {
         return try self.parseBinOp(&.{ .@"*", .@"/", .DIV, .MOD }, parseAtom);
     }
 
-    fn parseAdd(self: *Self) ParserError!*const ASTNode {
-        return try self.parseBinOp(&.{ .@"+", .@"-" }, parseMultiply);
+    fn parseAddSub(self: *Self) ParserError!*const ASTNode {
+        return try self.parseBinOp(&.{ .@"+", .@"-" }, parseMulDiv);
     }
 
     pub fn parseExpr(self: *Self) ParserError!*const ASTNode {
-        return try self.parseAdd();
+        return try self.parseAddSub();
     }
 };
 
-test ASTParser {
-    var alloc = std.heap.ArenaAllocator.init(testing.allocator);
-    defer alloc.deinit();
-    const gpa = alloc.allocator();
-    var iter = toker.LocationTokenIter.init("test", "[% -3 + 7 * 3 * (1 + 9) %]");
-    _ = try iter.next();
-    var parser = try ASTParser.init(gpa, iter);
-    const node = try parser.parseExpr();
-    std.debug.print("node: {f}\n", .{node});
-    // _ = node;
+test "parseExpr" {
+    const cases = &[_]struct { src: []const u8, want: []const u8 }{
+        .{ .src = "[% 1 %]", .want = "1" },
+        .{ .src = "[% 1 + 3 %]", .want = "(1 + 3)" },
+        .{ .src = "[% 1 + 3 * 2 %]", .want = "(1 + (3 * 2))" },
+        .{ .src = "[% foo %]", .want = "foo" },
+        .{ .src = "[% foo.bar %]", .want = "foo.bar" },
+        .{ .src = "[% $foo.bar %]", .want = "$foo.bar" },
+        .{ .src = "[% foo.$bar %]", .want = "foo.$bar" },
+    };
+
+    for (cases) |case| {
+        var alloc = std.heap.ArenaAllocator.init(testing.allocator);
+        defer alloc.deinit();
+        const gpa = alloc.allocator();
+
+        const iter = toker.LocationTokenIter.init("test", case.src);
+        var parser = try ASTParser.init(gpa, iter);
+
+        try testing.expectEqual(toker.Token{ .start = .{} }, parser.current.?.tok);
+        try parser.advance();
+        const node = try parser.parseExpr();
+        try testing.expectEqual(toker.Token{ .end = .{} }, parser.current.?.tok);
+
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        var w = std.Io.Writer.Allocating.fromArrayList(gpa, &buf);
+        defer w.deinit();
+        try w.writer.print("{f}", .{node});
+        var output = w.toArrayList();
+        defer output.deinit(gpa);
+        try testing.expect(std.mem.eql(u8, case.want, output.items));
+    }
 }
 
 const std = @import("std");
