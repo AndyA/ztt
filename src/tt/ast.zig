@@ -224,6 +224,7 @@ test "parseExpr" {
         .{ .src = "[% $foo.bar %]", .want = "$foo.bar" },
         .{ .src = "[% foo.$bar %]", .want = "foo.$bar" },
         .{ .src = "[% !a || b && c %]", .want = "(NOT a OR (b AND c))" },
+        .{ .src = "[% a <> 1 %]", .want = "(a != 1)" },
     };
 
     for (cases) |case| {
@@ -245,6 +246,7 @@ test "parseExpr" {
         try w.writer.print("{f}", .{node});
         var output = w.toArrayList();
         defer output.deinit(gpa);
+        // std.debug.print("{s}\n", .{output.items});
         try testing.expect(std.mem.eql(u8, case.want, output.items));
     }
 }
