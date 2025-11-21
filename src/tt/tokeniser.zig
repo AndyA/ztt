@@ -10,9 +10,7 @@ pub const TokerError = error{
 };
 
 pub const Keyword = enum {
-    const KW = @This();
-
-    pub fn normalise(kw: KW) KW {
+    pub fn normalise(kw: Keyword) Keyword {
         return switch (kw) {
             .@"!" => .NOT,
             .@"&&" => .AND,
