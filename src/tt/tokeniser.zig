@@ -14,6 +14,7 @@ pub const Keyword = enum {
             .@"!" => .NOT,
             .@"&&" => .AND,
             .@"||" => .OR,
+            .@"<>" => .@"!=",
             .FOR => .FOREACH,
             else => kw,
         };
@@ -474,7 +475,7 @@ test TokenIter {
                 .{ .keyword = .@">" },
                 .{ .keyword = .@"<=" },
                 .{ .keyword = .@">=" },
-                .{ .keyword = .@"<>" },
+                .{ .keyword = .@"!=" },
                 .{ .keyword = .@"=" },
                 .{ .keyword = .@"==" },
                 .{ .keyword = .@"!=" },

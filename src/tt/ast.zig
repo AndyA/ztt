@@ -25,7 +25,10 @@ pub const ASTNode = union(enum) {
             .number => |n| try w.print("{d}", .{n}),
             .symbol => |s| try w.print("{s}", .{s}),
             .ref => |r| try w.print("${f}", .{r}),
-            .op1 => |o| try w.print("{s}{f}", .{ @tagName(o.op), o.arg }),
+            .op1 => |o| switch (o.op) {
+                .NOT => try w.print("{s} {f}", .{ @tagName(o.op), o.arg }),
+                else => try w.print("{s}{f}", .{ @tagName(o.op), o.arg }),
+            },
             .op2 => |o| {
                 switch (o.op) {
                     .@"." => try w.print("{f}.{f}", .{ o.lhs, o.rhs }),
@@ -37,7 +40,7 @@ pub const ASTNode = union(enum) {
     }
 };
 
-const ParserError = toker.TokerError || error{
+const ASTError = toker.TokerError || error{
     OutOfMemory,
     MissingParen,
 };
@@ -50,13 +53,13 @@ pub const ASTParser = struct {
     current: ?toker.LocationToken = null,
     eof: bool = false,
 
-    pub fn init(gpa: Allocator, iter: toker.LocationTokenIter) ParserError!Self {
+    pub fn init(gpa: Allocator, iter: toker.LocationTokenIter) ASTError!Self {
         var self = Self{ .gpa = gpa, .iter = iter };
         try self.advance();
         return self;
     }
 
-    fn advance(self: *Self) ParserError!void {
+    fn advance(self: *Self) ASTError!void {
         if (self.eof) return error.UnexpectedEOF;
         self.current = try self.iter.next();
         if (self.current == null) self.eof = true;
@@ -78,14 +81,14 @@ pub const ASTParser = struct {
         return false;
     }
 
-    const ParseFn = fn (*Self) ParserError!*const ASTNode;
+    const ParseFn = fn (*Self) ASTError!*const ASTNode;
 
     fn allowed(allow: []const Keyword, kw: Keyword) bool {
         for (allow) |k| if (k == kw) return true;
         return false;
     }
 
-    fn parseBinOp(self: *Self, allow: []const Keyword, parseUp: ParseFn) ParserError!*const ASTNode {
+    fn parseBinOp(self: *Self, allow: []const Keyword, parseUp: ParseFn) ASTError!*const ASTNode {
         var lhs = try parseUp(self);
         while (!self.eof) {
             switch (self.current.?.tok) {
@@ -108,7 +111,7 @@ pub const ASTParser = struct {
         return lhs;
     }
 
-    fn parseVar(self: *Self) ParserError!*const ASTNode {
+    fn parseVar(self: *Self) ASTError!*const ASTNode {
         switch (self.current.?.tok) {
             .keyword => |kw| {
                 if (kw == .@"$") {
@@ -116,26 +119,26 @@ pub const ASTParser = struct {
                     const ref = try self.parseVar();
                     return try self.newNode(.{ .ref = ref });
                 }
-                return ParserError.SyntaxError;
+                return ASTError.SyntaxError;
             },
             .symbol => |sym| {
                 try self.advance();
                 return try self.newNode(.{ .symbol = sym });
             },
-            else => return ParserError.SyntaxError,
+            else => return ASTError.SyntaxError,
         }
     }
 
-    fn parseCall(self: *Self) ParserError!*const ASTNode {
+    fn parseCall(self: *Self) ASTError!*const ASTNode {
         // TODO
         return try self.parseVar();
     }
 
-    fn parseRef(self: *Self) ParserError!*const ASTNode {
+    fn parseRef(self: *Self) ASTError!*const ASTNode {
         return self.parseBinOp(&.{.@"."}, parseCall);
     }
 
-    fn parseAtom(self: *Self) ParserError!*const ASTNode {
+    fn parseAtom(self: *Self) ASTError!*const ASTNode {
         switch (self.current.?.tok) {
             .keyword => |kw| {
                 switch (kw) {
@@ -148,14 +151,14 @@ pub const ASTParser = struct {
                         try self.advance();
                         const res = try self.parseExpr();
                         if (!self.nextKeywordIs(.@")"))
-                            return ParserError.MissingParen;
+                            return ASTError.MissingParen;
                         try self.advance();
                         return res;
                     },
                     .@"$" => {
                         return try self.parseRef();
                     },
-                    else => return ParserError.SyntaxError,
+                    else => return ASTError.SyntaxError,
                 }
             },
             .number => |n| {
@@ -166,20 +169,35 @@ pub const ASTParser = struct {
             .symbol => {
                 return try self.parseRef();
             },
-            else => return ParserError.SyntaxError,
+            else => return ASTError.SyntaxError,
         }
     }
 
-    fn parseMulDiv(self: *Self) ParserError!*const ASTNode {
+    fn parseMulDiv(self: *Self) ASTError!*const ASTNode {
         return try self.parseBinOp(&.{ .@"*", .@"/", .DIV, .MOD }, parseAtom);
     }
 
-    fn parseAddSub(self: *Self) ParserError!*const ASTNode {
+    fn parseAddSub(self: *Self) ASTError!*const ASTNode {
         return try self.parseBinOp(&.{ .@"+", .@"-" }, parseMulDiv);
     }
 
-    pub fn parseExpr(self: *Self) ParserError!*const ASTNode {
-        return try self.parseAddSub();
+    fn parseRel(self: *Self) ASTError!*const ASTNode {
+        return try self.parseBinOp(
+            &.{ .@"<", .@"<=", .@">", .@">=", .@"==", .@"!=" },
+            parseAddSub,
+        );
+    }
+
+    fn parseAnd(self: *Self) ASTError!*const ASTNode {
+        return try self.parseBinOp(&.{.AND}, parseRel);
+    }
+
+    fn parseOr(self: *Self) ASTError!*const ASTNode {
+        return try self.parseBinOp(&.{.OR}, parseAnd);
+    }
+
+    pub fn parseExpr(self: *Self) ASTError!*const ASTNode {
+        return try self.parseOr();
     }
 };
 
@@ -193,6 +211,7 @@ test "parseExpr" {
         .{ .src = "[% foo.bar %]", .want = "foo.bar" },
         .{ .src = "[% $foo.bar %]", .want = "$foo.bar" },
         .{ .src = "[% foo.$bar %]", .want = "foo.$bar" },
+        .{ .src = "[% !a || b && c %]", .want = "(NOT a OR (b AND c))" },
     };
 
     for (cases) |case| {
