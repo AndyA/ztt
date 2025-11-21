@@ -11,22 +11,26 @@ pub const TokerError = error{
 
 pub const Keyword = enum {
     @"%",
+    @"!",
     @".",
+    @"$",
     @"=",
     @"+",
     @"-",
+    @"*",
+    @"/",
     @"_",
     @";",
     @"?",
     @":",
-    @"*",
-    @"/",
     @"[",
     @"]",
     @"(",
     @")",
     @"{",
     @"}",
+    @"&",
+    @"|",
     @"<",
     @">",
     @"==",
@@ -35,8 +39,8 @@ pub const Keyword = enum {
     @"<>",
     @"=>",
     @"!=",
-    @"$",
-    @"|",
+    @"&&",
+    @"||",
     AND,
     BLOCK,
     BREAK,
@@ -297,10 +301,10 @@ pub const TokenIter = struct {
                         self.state = .COMMENT;
                         continue :parse self.state;
                     },
-                    '<', '=', '>', '!' => {
+                    '<', '=', '>', '!', '&', '|' => {
                         if (!self.eof()) {
                             switch (self.peek()) {
-                                '>', '=' => {
+                                '>', '=', '&', '|' => {
                                     const op = self.src[self.pos - 1 .. self.pos + 1];
                                     if (keywordLookup(op)) |kw| {
                                         _ = self.advance();
