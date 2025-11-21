@@ -219,6 +219,7 @@ test "parseExpr" {
         .{ .src = "[% 1 + 3 * 2 %]", .want = "(1 + (3 * 2))" },
         .{ .src = "[% (1 + 3) * 2 %]", .want = "((1 + 3) * 2)" },
         .{ .src = "[% foo %]", .want = "foo" },
+        .{ .src = "[% $$foo %]", .want = "$$foo" },
         .{ .src = "[% foo.bar %]", .want = "foo.bar" },
         .{ .src = "[% $foo.bar %]", .want = "$foo.bar" },
         .{ .src = "[% foo.$bar %]", .want = "foo.$bar" },
