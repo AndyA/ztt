@@ -18,4 +18,5 @@ const assert = std.debug.assert;
 
 test {
     _ = @import("./tt/tokeniser.zig");
+    _ = @import("./tt/ast.zig");
 }

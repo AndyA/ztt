@@ -2,10 +2,11 @@ fn isSymbol(chr: u8) bool {
     return std.ascii.isAlphanumeric(chr) or chr == '_';
 }
 
-pub const TTError = error{
+pub const TokerError = error{
     MissingQuote,
     UnexpectedEOF,
     SyntaxError,
+    InvalidCharacter,
 };
 
 pub const Keyword = enum {
@@ -174,13 +175,13 @@ pub const TokenIter = struct {
         }
     }
 
-    fn wantDigits(self: *Self) !void {
+    fn wantDigits(self: *Self) TokerError!void {
         const start = self.pos;
         self.skipDigits();
         if (start == self.pos) return error.SyntaxError;
     }
 
-    fn wantNumber(self: *Self) !void {
+    fn wantNumber(self: *Self) TokerError!void {
         self.skipDigits();
         if (self.isNext("."))
             try self.wantDigits();
@@ -201,7 +202,7 @@ pub const TokenIter = struct {
         return std.meta.stringToEnum(Keyword, op);
     }
 
-    pub fn next(self: *Self) !?Token {
+    pub fn next(self: *Self) TokerError!?Token {
         if (self.eof()) return null;
         return parse: switch (self.state) {
             .TEXT => {
@@ -492,12 +493,12 @@ test TokenIter {
     }
 }
 
-const LocationToken = struct {
+pub const LocationToken = struct {
     tok: Token,
     loc: Location,
 };
 
-const LocationTokenIter = struct {
+pub const LocationTokenIter = struct {
     const Self = @This();
 
     iter: TokenIter,
@@ -506,7 +507,7 @@ const LocationTokenIter = struct {
         return Self{ .iter = TokenIter.init(name, src) };
     }
 
-    pub fn next(self: *Self) !?LocationToken {
+    pub fn next(self: *Self) TokerError!?LocationToken {
         const loc = self.iter.getLocation();
         const tok = try self.iter.next();
         if (tok) |t|
