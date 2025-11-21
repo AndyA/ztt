@@ -179,11 +179,17 @@ pub const ASTParser = struct {
     }
 
     fn parseMulDiv(self: *Self) ASTError!*const ASTNode {
-        return try self.parseBinOp(&.{ .@"*", .@"/", .DIV, .MOD }, parseAssign);
+        return try self.parseBinOp(
+            &.{ .@"*", .@"/", .DIV, .MOD },
+            parseAssign,
+        );
     }
 
     fn parseAddSub(self: *Self) ASTError!*const ASTNode {
-        return try self.parseBinOp(&.{ .@"+", .@"-" }, parseMulDiv);
+        return try self.parseBinOp(
+            &.{ .@"+", .@"-" },
+            parseMulDiv,
+        );
     }
 
     fn parseRel(self: *Self) ASTError!*const ASTNode {
