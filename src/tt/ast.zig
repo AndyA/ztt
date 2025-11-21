@@ -96,11 +96,9 @@ pub const ASTParser = struct {
                     if (allowed(allow, op)) {
                         try self.advance();
                         const rhs = try parseUp(self);
-                        lhs = try self.newNode(.{ .binary_op = .{
-                            .op = op,
-                            .lhs = lhs,
-                            .rhs = rhs,
-                        } });
+                        lhs = try self.newNode(
+                            .{ .binary_op = .{ .op = op, .lhs = lhs, .rhs = rhs } },
+                        );
                     } else {
                         break;
                     }
