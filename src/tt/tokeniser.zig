@@ -10,6 +10,18 @@ pub const TokerError = error{
 };
 
 pub const Keyword = enum {
+    const KW = @This();
+
+    pub fn normalise(kw: KW) KW {
+        return switch (kw) {
+            .@"!" => .NOT,
+            .@"&&" => .AND,
+            .@"||" => .OR,
+            .FOR => .FOREACH,
+            else => kw,
+        };
+    }
+
     @"%",
     @"!",
     @".",
@@ -206,7 +218,9 @@ pub const TokenIter = struct {
     }
 
     fn keywordLookup(op: []const u8) ?Keyword {
-        return std.meta.stringToEnum(Keyword, op);
+        if (std.meta.stringToEnum(Keyword, op)) |kw|
+            return kw.normalise();
+        return null;
     }
 
     pub fn next(self: *Self) TokerError!?Token {
@@ -394,6 +408,14 @@ test TokenIter {
         .{ .src = "[% '[%' %]", .want = &[_]T{
             .{ .start = .{} },
             .{ .sq_string = "[%" },
+            .{ .end = .{} },
+        } },
+        .{ .src = "[% ! && || FOR %]", .want = &[_]T{
+            .{ .start = .{} },
+            .{ .keyword = .NOT },
+            .{ .keyword = .AND },
+            .{ .keyword = .OR },
+            .{ .keyword = .FOREACH },
             .{ .end = .{} },
         } },
         .{ .src = "hello [% %] world", .want = &[_]T{

@@ -139,7 +139,7 @@ pub const ASTParser = struct {
         switch (self.current.?.tok) {
             .keyword => |kw| {
                 switch (kw) {
-                    .@"-" => |op| {
+                    .@"-", .NOT => |op| {
                         try self.advance();
                         const arg = try self.parseAtom();
                         return try self.newNode(.{ .op1 = .{ .op = op, .arg = arg } });
