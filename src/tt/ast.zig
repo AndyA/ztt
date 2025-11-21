@@ -11,8 +11,8 @@ pub const ASTNode = union(enum) {
     ref: *const Node,
     call: struct { method: *const Node, args: []*const Node },
 
-    unOp: struct { op: Keyword, arg: *const Node },
-    binOp: struct { op: Keyword, lhs: *const Node, rhs: *const Node },
+    unary_op: struct { op: Keyword, arg: *const Node },
+    binary_op: struct { op: Keyword, lhs: *const Node, rhs: *const Node },
 
     IF: struct {
         cond: *const Node, // expr
@@ -25,11 +25,11 @@ pub const ASTNode = union(enum) {
             .number => |n| try w.print("{d}", .{n}),
             .symbol => |s| try w.print("{s}", .{s}),
             .ref => |r| try w.print("${f}", .{r}),
-            .unOp => |o| switch (o.op) {
+            .unary_op => |o| switch (o.op) {
                 .NOT => try w.print("{s} {f}", .{ @tagName(o.op), o.arg }),
                 else => try w.print("{s}{f}", .{ @tagName(o.op), o.arg }),
             },
-            .binOp => |o| {
+            .binary_op => |o| {
                 switch (o.op) {
                     .@"." => try w.print("{f}.{f}", .{ o.lhs, o.rhs }),
                     else => try w.print("({f} {s} {f})", .{ o.lhs, @tagName(o.op), o.rhs }),
@@ -96,7 +96,7 @@ pub const ASTParser = struct {
                     if (allowed(allow, op)) {
                         try self.advance();
                         const rhs = try parseUp(self);
-                        lhs = try self.newNode(.{ .binOp = .{
+                        lhs = try self.newNode(.{ .binary_op = .{
                             .op = op,
                             .lhs = lhs,
                             .rhs = rhs,
@@ -145,7 +145,7 @@ pub const ASTParser = struct {
                     .@"-", .NOT => |op| {
                         try self.advance();
                         const arg = try self.parseAtom();
-                        return try self.newNode(.{ .unOp = .{ .op = op, .arg = arg } });
+                        return try self.newNode(.{ .unary_op = .{ .op = op, .arg = arg } });
                     },
                     .@"(" => {
                         try self.advance();
