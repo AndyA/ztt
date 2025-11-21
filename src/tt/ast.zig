@@ -213,6 +213,7 @@ pub const ASTParser = struct {
 test "parseExpr" {
     const cases = &[_]struct { src: []const u8, want: []const u8 }{
         .{ .src = "[% 1 %]", .want = "1" },
+        .{ .src = "[% -1 %]", .want = "-1" },
         .{ .src = "[% 1 + 3 %]", .want = "(1 + 3)" },
         .{ .src = "[% 1 + 3 * 2 %]", .want = "(1 + (3 * 2))" },
         .{ .src = "[% (1 + 3) * 2 %]", .want = "((1 + 3) * 2)" },
