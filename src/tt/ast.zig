@@ -31,7 +31,7 @@ pub const ASTNode = union(enum) {
             },
             .binary_op => |o| {
                 switch (o.op) {
-                    .@"." => try w.print("{f}.{f}", .{ o.lhs, o.rhs }),
+                    .@"." => try w.print("{f}{s}{f}", .{ o.lhs, @tagName(o.op), o.rhs }),
                     else => try w.print("({f} {s} {f})", .{ o.lhs, @tagName(o.op), o.rhs }),
                 }
             },
