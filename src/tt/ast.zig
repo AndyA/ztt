@@ -147,7 +147,9 @@ pub const ASTParser = struct {
                     .@"-", .NOT => |op| {
                         try self.advance();
                         const arg = try self.parseAtom();
-                        return try self.newNode(.{ .unary_op = .{ .op = op, .arg = arg } });
+                        return try self.newNode(
+                            .{ .unary_op = .{ .op = op, .arg = arg } },
+                        );
                     },
                     .@"(" => {
                         try self.advance();
