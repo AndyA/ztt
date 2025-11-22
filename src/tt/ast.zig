@@ -1,3 +1,4 @@
+const NodeRef = *const ASTNode;
 pub const ASTNode = union(enum) {
     const Node = @This();
 
@@ -5,19 +6,22 @@ pub const ASTNode = union(enum) {
     string: []const u8,
     number: f64,
 
-    block: []*const Node, // top level and block bodies
+    block: []NodeRef, // top level and block bodies
 
     symbol: []const u8,
-    ref: *const Node,
-    call: struct { method: *const Node, args: []*const Node },
+    ref: NodeRef,
+    call: struct { method: NodeRef, args: []NodeRef },
 
-    unary_op: struct { op: Keyword, arg: *const Node },
-    binary_op: struct { op: Keyword, lhs: *const Node, rhs: *const Node },
+    assign_stmt: struct { lvalue: NodeRef, expr: NodeRef },
+    assign_expr: struct { lvalue: NodeRef, expr: NodeRef },
+
+    unary_op: struct { op: Keyword, arg: NodeRef },
+    binary_op: struct { op: Keyword, lhs: NodeRef, rhs: NodeRef },
 
     IF: struct {
-        cond: *const Node, // expr
-        THEN: *const Node, // block
-        ELSE: *const Node, // block
+        cond: NodeRef, // expr
+        THEN: NodeRef, // block
+        ELSE: NodeRef, // block
     },
 
     pub fn format(self: Node, w: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -81,21 +85,21 @@ pub const ASTParser = struct {
         return false;
     }
 
-    const ParseFn = fn (*Self) ASTError!*const ASTNode;
-
     fn allowed(allow: []const Keyword, kw: Keyword) bool {
         for (allow) |k| if (k == kw) return true;
         return false;
     }
 
-    fn parseBinOp(self: *Self, allow: []const Keyword, parseUp: ParseFn) ASTError!*const ASTNode {
-        var lhs = try parseUp(self);
+    const ParseFn = fn (*Self) ASTError!NodeRef;
+
+    fn parseBinOp(self: *Self, allow: []const Keyword, parseNext: ParseFn) ASTError!NodeRef {
+        var lhs = try parseNext(self);
         while (!self.eof) {
             switch (self.current.?.tok) {
                 .keyword => |op| {
                     if (allowed(allow, op)) {
                         try self.advance();
-                        const rhs = try parseUp(self);
+                        const rhs = try parseNext(self);
                         lhs = try self.newNode(
                             .{ .binary_op = .{ .op = op, .lhs = lhs, .rhs = rhs } },
                         );
@@ -109,7 +113,7 @@ pub const ASTParser = struct {
         return lhs;
     }
 
-    fn parseVar(self: *Self) ASTError!*const ASTNode {
+    fn parseVar(self: *Self) ASTError!NodeRef {
         switch (self.current.?.tok) {
             .keyword => |kw| {
                 if (kw == .@"$") {
@@ -127,16 +131,16 @@ pub const ASTParser = struct {
         }
     }
 
-    fn parseCall(self: *Self) ASTError!*const ASTNode {
+    fn parseCall(self: *Self) ASTError!NodeRef {
         // TODO
         return try self.parseVar();
     }
 
-    fn parseRef(self: *Self) ASTError!*const ASTNode {
+    fn parseRef(self: *Self) ASTError!NodeRef {
         return self.parseBinOp(&.{.@"."}, parseCall);
     }
 
-    fn parseAtom(self: *Self) ASTError!*const ASTNode {
+    fn parseAtom(self: *Self) ASTError!NodeRef {
         switch (self.current.?.tok) {
             .keyword => |kw| {
                 switch (kw) {
@@ -148,6 +152,7 @@ pub const ASTParser = struct {
                     .@"(" => {
                         try self.advance();
                         const res = try self.parseExpr();
+                        // TODO assign_stmt -> assign_expr
                         if (!self.nextKeywordIs(.@")"))
                             return ASTError.MissingParen;
                         try self.advance();
@@ -171,41 +176,41 @@ pub const ASTParser = struct {
         }
     }
 
-    fn parseAssign(self: *Self) ASTError!*const ASTNode {
+    fn parseAssign(self: *Self) ASTError!NodeRef {
         // TODO parse assignment
         return try self.parseAtom();
     }
 
-    fn parseMulDiv(self: *Self) ASTError!*const ASTNode {
+    fn parseMulDiv(self: *Self) ASTError!NodeRef {
         return try self.parseBinOp(
             &.{ .@"*", .@"/", .DIV, .MOD },
             parseAssign,
         );
     }
 
-    fn parseAddSub(self: *Self) ASTError!*const ASTNode {
+    fn parseAddSub(self: *Self) ASTError!NodeRef {
         return try self.parseBinOp(
-            &.{ .@"+", .@"-" },
+            &.{ .@"+", .@"-", ._ },
             parseMulDiv,
         );
     }
 
-    fn parseRel(self: *Self) ASTError!*const ASTNode {
+    fn parseRel(self: *Self) ASTError!NodeRef {
         return try self.parseBinOp(
             &.{ .@"<", .@"<=", .@">", .@">=", .@"==", .@"!=" },
             parseAddSub,
         );
     }
 
-    fn parseAnd(self: *Self) ASTError!*const ASTNode {
+    fn parseAnd(self: *Self) ASTError!NodeRef {
         return try self.parseBinOp(&.{.AND}, parseRel);
     }
 
-    fn parseOr(self: *Self) ASTError!*const ASTNode {
+    fn parseOr(self: *Self) ASTError!NodeRef {
         return try self.parseBinOp(&.{.OR}, parseAnd);
     }
 
-    pub fn parseExpr(self: *Self) ASTError!*const ASTNode {
+    pub fn parseExpr(self: *Self) ASTError!NodeRef {
         return try self.parseOr();
     }
 };
