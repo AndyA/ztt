@@ -12,6 +12,7 @@ pub const Keyword = enum {
     pub fn normalise(kw: Keyword) Keyword {
         return switch (kw) {
             .@"!" => .NOT,
+            .@"|" => .FILTER,
             .@"&&" => .AND,
             .@"||" => .OR,
             .@"<>" => .@"!=",

@@ -197,7 +197,7 @@ pub const ASTParser = struct {
         );
     }
 
-    fn parseRel(self: *Self) ASTError!NodeRef {
+    fn parseInequality(self: *Self) ASTError!NodeRef {
         return try self.parseBinOp(
             &.{ .@"<", .@"<=", .@">", .@">=", .@"==", .@"!=" },
             parseAddSub,
@@ -205,7 +205,7 @@ pub const ASTParser = struct {
     }
 
     fn parseAnd(self: *Self) ASTError!NodeRef {
-        return try self.parseBinOp(&.{.AND}, parseRel);
+        return try self.parseBinOp(&.{.AND}, parseInequality);
     }
 
     fn parseOr(self: *Self) ASTError!NodeRef {
@@ -221,7 +221,8 @@ test "parseExpr" {
     const cases = &[_]struct { src: []const u8, want: []const u8 }{
         .{ .src = "[% 1 %]", .want = "1" },
         .{ .src = "[% -1 %]", .want = "-1" },
-        .{ .src = "[% 1 + 3 %]", .want = "(1 + 3)" },
+        .{ .src = "[% (-(1)) %]", .want = "-1" },
+        .{ .src = "[% 1 + 3.5 %]", .want = "(1 + 3.5)" },
         .{ .src = "[% 1 + 3 * 2 %]", .want = "(1 + (3 * 2))" },
         .{ .src = "[% (1 + 3) * 2 %]", .want = "((1 + 3) * 2)" },
         .{ .src = "[% foo %]", .want = "foo" },
@@ -230,6 +231,7 @@ test "parseExpr" {
         .{ .src = "[% $foo.bar %]", .want = "$foo.bar" },
         .{ .src = "[% foo.$bar %]", .want = "foo.$bar" },
         .{ .src = "[% !a || b && c %]", .want = "(NOT a OR (b AND c))" },
+        .{ .src = "[% !(a || b && c) %]", .want = "NOT (a OR (b AND c))" },
         .{ .src = "[% a <> 1 %]", .want = "(a != 1)" },
     };
 
