@@ -176,13 +176,15 @@ pub const ASTParser = struct {
     }
 
     fn parseCall(self: *Self) ASTError!NodeRef {
-        const method = try self.parseVar();
-        if (!self.nextKeywordIs(.@"(")) return method;
-        try self.advance();
-        const args = try self.parseList(.@")", true);
-        return try self.newNode(
-            .{ .call = .{ .method = method, .args = args } },
-        );
+        var call = try self.parseVar();
+        while (self.nextKeywordIs(.@"(")) {
+            try self.advance();
+            const args = try self.parseList(.@")", true);
+            call = try self.newNode(
+                .{ .call = .{ .method = call, .args = args } },
+            );
+        }
+        return call;
     }
 
     fn parseRef(self: *Self) ASTError!NodeRef {
@@ -289,6 +291,7 @@ test "parseExpr" {
         .{ .src = "[% a <> 1 %]", .want = "(a != 1)" },
         .{ .src = "[% foo(1, 2, 3) %]", .want = "foo(1, 2, 3)" },
         .{ .src = "[% bar(1/2) %]", .want = "bar((1 / 2))" },
+        .{ .src = "[% bar(1/2)(!4) %]", .want = "bar((1 / 2))(NOT 4)" },
         .{ .src = "[% [1, -2, 3] %]", .want = "[1, -2, 3]" },
         .{ .src = "[% [1 -2 3] %]", .want = "[(1 - 2), 3]" },
     };
