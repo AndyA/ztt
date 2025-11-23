@@ -24,7 +24,7 @@ pub const ASTNode = union(enum) {
         ELSE: NodeRef, // block
     },
 
-    pub fn format(self: Node, w: *std.Io.Writer) std.Io.Writer.Error!void {
+    pub fn format(self: Node, w: *Io.Writer) Io.Writer.Error!void {
         switch (self) {
             .number => |n| try w.print("{d}", .{n}),
             .symbol => |s| try w.print("{s}", .{s}),
@@ -263,6 +263,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
+const Io = std.Io;
 
 const toker = @import("./tokeniser.zig");
 const Keyword = toker.Keyword;
