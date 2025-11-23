@@ -117,6 +117,8 @@ pub const Location = struct {
     column: u32, // 0 based
 };
 
+// TODO handle bareword parsing for INCLUDE / PROCESS
+
 pub const TokenIter = struct {
     const Self = @This();
 
