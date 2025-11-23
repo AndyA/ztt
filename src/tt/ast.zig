@@ -296,6 +296,7 @@ test "parseExpr" {
         .{ .src = "[% [1, -2, 3] %]", .want = "[1, -2, 3]" },
         .{ .src = "[% [1 -2 3] %]", .want = "[(1 - 2), 3]" },
         .{ .src = "[% [1 (-2) 3] %]", .want = "[1, -2, 3]" },
+        .{ .src = "[% [bar(1/2)(!pog(3)).foo] %]", .want = "[bar((1 / 2))(NOT pog(3)).foo]" },
     };
 
     for (cases) |case| {
