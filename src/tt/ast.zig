@@ -292,7 +292,7 @@ test "parseExpr" {
         .{ .src = "[% foo(1, 2, 3) %]", .want = "foo(1, 2, 3)" },
         .{ .src = "[% bar(1/2) %]", .want = "bar((1 / 2))" },
         .{ .src = "[% bar(1/2)(!4) %]", .want = "bar((1 / 2))(NOT 4)" },
-        .{ .src = "[% bar(1/2)(!4).foo %]", .want = "bar((1 / 2))(NOT 4).foo" },
+        .{ .src = "[% bar(1/2)(!pog(3)).foo %]", .want = "bar((1 / 2))(NOT pog(3)).foo" },
         .{ .src = "[% [1, -2, 3] %]", .want = "[1, -2, 3]" },
         .{ .src = "[% [1 -2 3] %]", .want = "[(1 - 2), 3]" },
     };
