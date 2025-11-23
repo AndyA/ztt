@@ -14,6 +14,7 @@ pub const Keyword = enum {
             .@"!" => .NOT,
             .@"&&" => .AND,
             .@"<>" => .@"!=",
+            .@"=>" => .@"=",
             .@"|" => .FILTER,
             .@"||" => .OR,
             .FOR => .FOREACH,
