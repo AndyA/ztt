@@ -24,6 +24,13 @@ pub const ASTNode = union(enum) {
         ELSE: NodeRef, // block
     },
 
+    fn formatList(w: *Io.Writer, list: []NodeRef) Io.Writer.Error!void {
+        for (list, 0..) |item, index| {
+            try w.print("{f}", .{item});
+            if (index < list.len - 1) try w.print(", ", .{});
+        }
+    }
+
     pub fn format(self: Node, w: *Io.Writer) Io.Writer.Error!void {
         switch (self) {
             .number => |n| try w.print("{d}", .{n}),
@@ -39,6 +46,11 @@ pub const ASTNode = union(enum) {
                     else => try w.print("({f} {s} {f})", .{ o.lhs, @tagName(o.op), o.rhs }),
                 }
             },
+            .call => |c| {
+                try w.print("{f}(", .{c.method});
+                try formatList(w, c.args);
+                try w.print(")", .{});
+            },
             else => unreachable,
         }
     }
@@ -47,6 +59,8 @@ pub const ASTNode = union(enum) {
 const ASTError = toker.TokerError || error{
     OutOfMemory,
     MissingParen,
+    MissingTerminal,
+    MissingComma,
 };
 
 pub const ASTParser = struct {
@@ -88,6 +102,29 @@ pub const ASTParser = struct {
     fn allowed(allow: []const Keyword, kw: Keyword) bool {
         for (allow) |k| if (k == kw) return true;
         return false;
+    }
+
+    fn parseList(self: *Self, end: Keyword, require_commas: bool) ASTError![]NodeRef {
+        var list: std.ArrayListUnmanaged(NodeRef) = .empty;
+        while (true) {
+            if (self.eof)
+                return ASTError.MissingTerminal;
+            if (self.nextKeywordIs(end)) {
+                try self.advance();
+                break;
+            }
+            const item = try self.parseExpr();
+            try list.append(self.gpa, item);
+            if (self.nextKeywordIs(.@",")) {
+                try self.advance();
+            } else if (self.nextKeywordIs(end)) {
+                try self.advance();
+                break;
+            } else if (require_commas) {
+                return ASTError.MissingComma;
+            }
+        }
+        return list.items;
     }
 
     const ParseFn = fn (*Self) ASTError!NodeRef;
@@ -132,8 +169,13 @@ pub const ASTParser = struct {
     }
 
     fn parseCall(self: *Self) ASTError!NodeRef {
-        // TODO
-        return try self.parseVar();
+        const method = try self.parseVar();
+        if (!self.nextKeywordIs(.@"(")) return method;
+        try self.advance();
+        const args = try self.parseList(.@")", true);
+        return try self.newNode(
+            .{ .call = .{ .method = method, .args = args } },
+        );
     }
 
     fn parseRef(self: *Self) ASTError!NodeRef {
@@ -233,6 +275,7 @@ test "parseExpr" {
         .{ .src = "[% !a || b && c %]", .want = "(NOT a OR (b AND c))" },
         .{ .src = "[% !(a || b && c) %]", .want = "NOT (a OR (b AND c))" },
         .{ .src = "[% a <> 1 %]", .want = "(a != 1)" },
+        .{ .src = "[% foo(1, 2, 3) %]", .want = "foo(1, 2, 3)" },
     };
 
     for (cases) |case| {
