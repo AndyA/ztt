@@ -5,6 +5,7 @@ pub const ASTNode = union(enum) {
     literal: []const u8,
     string: []const u8,
     number: f64,
+    array: []NodeRef,
 
     block: []NodeRef, // top level and block bodies
 
@@ -50,6 +51,11 @@ pub const ASTNode = union(enum) {
                 try w.print("{f}(", .{c.method});
                 try formatList(w, c.args);
                 try w.print(")", .{});
+            },
+            .array => |a| {
+                try w.print("[", .{});
+                try formatList(w, a);
+                try w.print("]", .{});
             },
             else => unreachable,
         }
@@ -115,6 +121,7 @@ pub const ASTParser = struct {
             }
             const item = try self.parseExpr();
             try list.append(self.gpa, item);
+            // TODO calling nextKeywordIs a lot here...
             if (self.nextKeywordIs(.@",")) {
                 try self.advance();
             } else if (self.nextKeywordIs(end)) {
@@ -205,6 +212,11 @@ pub const ASTParser = struct {
                     .@"$" => {
                         return try self.parseRef();
                     },
+                    .@"[" => {
+                        try self.advance();
+                        const array = try self.parseList(.@"]", false);
+                        return try self.newNode(.{ .array = array });
+                    },
                     else => return ASTError.SyntaxError,
                 }
             },
@@ -276,6 +288,8 @@ test "parseExpr" {
         .{ .src = "[% !(a || b && c) %]", .want = "NOT (a OR (b AND c))" },
         .{ .src = "[% a <> 1 %]", .want = "(a != 1)" },
         .{ .src = "[% foo(1, 2, 3) %]", .want = "foo(1, 2, 3)" },
+        .{ .src = "[% [1, 2, 3] %]", .want = "[1, 2, 3]" },
+        .{ .src = "[% [1 2 3] %]", .want = "[1, 2, 3]" },
     };
 
     for (cases) |case| {
