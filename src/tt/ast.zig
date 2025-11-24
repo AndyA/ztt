@@ -66,6 +66,12 @@ pub const ASTNode = union(enum) {
             else => unreachable,
         }
     }
+
+    pub fn create(gpa: Allocator, node: Node) ASTError!*Node {
+        const self = try gpa.create(ASTNode);
+        self.* = node;
+        return self;
+    }
 };
 
 const ASTError = toker.TokerError || error{
@@ -95,10 +101,8 @@ pub const ASTParser = struct {
         if (self.current == null) self.eof = true;
     }
 
-    fn newNode(self: *Self, proto: ASTNode) !*ASTNode {
-        const node = try self.gpa.create(ASTNode);
-        node.* = proto;
-        return node;
+    fn newNode(self: *const Self, proto: ASTNode) ASTError!*ASTNode {
+        return try ASTNode.create(self.gpa, proto);
     }
 
     fn nextKeywordIs(self: *Self, want: Keyword) bool {
