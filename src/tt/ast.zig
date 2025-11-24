@@ -13,8 +13,8 @@ pub const ASTNode = union(enum) {
     ref: NodeRef,
     call: struct { method: NodeRef, args: []NodeRef },
 
-    assign_stmt: struct { lvalue: NodeRef, expr: NodeRef },
-    assign_expr: struct { lvalue: NodeRef, expr: NodeRef },
+    assign_stmt: struct { lvalue: NodeRef, rvalue: NodeRef },
+    assign_expr: struct { lvalue: NodeRef, rvalue: NodeRef },
 
     unary_op: struct { op: Keyword, arg: NodeRef },
     binary_op: struct { op: Keyword, lhs: NodeRef, rhs: NodeRef },
@@ -46,6 +46,12 @@ pub const ASTNode = union(enum) {
                     .@"." => try w.print("{f}{s}{f}", .{ o.lhs, @tagName(o.op), o.rhs }),
                     else => try w.print("({f} {s} {f})", .{ o.lhs, @tagName(o.op), o.rhs }),
                 }
+            },
+            .assign_stmt => |a| {
+                try w.print("{f} = {f}", .{ a.lvalue, a.rvalue });
+            },
+            .assign_expr => |a| {
+                try w.print("({f} = {f})", .{ a.lvalue, a.rvalue });
             },
             .call => |c| {
                 try w.print("{f}(", .{c.method});
@@ -191,6 +197,15 @@ pub const ASTParser = struct {
         return self.parseBinOp(&.{.@"."}, parseCall);
     }
 
+    fn parenthesise(self: *const Self, node: NodeRef) ASTError!NodeRef {
+        return switch (node.*) {
+            .assign_stmt => |a| try self.newNode(
+                .{ .assign_expr = .{ .lvalue = a.lvalue, .rvalue = a.rvalue } },
+            ),
+            else => node,
+        };
+    }
+
     fn parseAtom(self: *Self) ASTError!NodeRef {
         switch (self.current.?.tok) {
             .keyword => |kw| {
@@ -209,7 +224,7 @@ pub const ASTParser = struct {
                         if (!self.nextKeywordIs(.@")"))
                             return ASTError.MissingParen;
                         try self.advance();
-                        return res;
+                        return self.parenthesise(res);
                     },
                     .@"$" => {
                         return try self.parseRef();
@@ -235,8 +250,15 @@ pub const ASTParser = struct {
     }
 
     fn parseAssign(self: *Self) ASTError!NodeRef {
-        // TODO parse assignment
-        return try self.parseAtom();
+        const lvalue = try self.parseAtom();
+        if (self.nextKeywordIs(.@"=")) {
+            try self.advance();
+            const rvalue = try self.parseExpr();
+            return self.newNode(
+                .{ .assign_stmt = .{ .lvalue = lvalue, .rvalue = rvalue } },
+            );
+        }
+        return lvalue;
     }
 
     fn parseMulDiv(self: *Self) ASTError!NodeRef {
@@ -299,6 +321,9 @@ test "parseExpr" {
         .{ .src = "[% [a (3)] %]", .want = "[a(3)]" },
         .{ .src = "[% [a, (3)] %]", .want = "[a, 3]" },
         .{ .src = "[% [bar(1/2)(!pog(3)).foo] %]", .want = "[bar((1 / 2))(NOT pog(3)).foo]" },
+        .{ .src = "[% a = 3 %]", .want = "a = 3" },
+        .{ .src = "[% ((a = 3)) %]", .want = "(a = 3)" },
+        .{ .src = "[% a = (b = 3) %]", .want = "a = (b = 3)" },
     };
 
     for (cases) |case| {
