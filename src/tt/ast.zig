@@ -1,85 +1,16 @@
-const NodeRef = *const ASTNode;
-pub const ASTNode = union(enum) {
-    const Node = @This();
+fn isInterp(chr: u8) bool {
+    return std.ascii.isAlphanumeric(chr) or chr == '_' or chr == '.';
+}
 
-    literal: []const u8,
-    string: []const u8,
-    number: f64,
-    array: []NodeRef,
-
-    block: []NodeRef, // top level and block bodies
-
-    symbol: []const u8,
-    ref: NodeRef,
-    call: struct { method: NodeRef, args: []NodeRef },
-
-    assign_stmt: struct { lvalue: NodeRef, rvalue: NodeRef },
-    assign_expr: struct { lvalue: NodeRef, rvalue: NodeRef },
-
-    unary_op: struct { op: Keyword, arg: NodeRef },
-    binary_op: struct { op: Keyword, lhs: NodeRef, rhs: NodeRef },
-
-    IF: struct {
-        cond: NodeRef, // expr
-        THEN: NodeRef, // block
-        ELSE: NodeRef, // block
-    },
-
-    fn formatList(w: *Io.Writer, list: []NodeRef) Io.Writer.Error!void {
-        for (list, 0..) |item, index| {
-            try w.print("{f}", .{item});
-            if (index < list.len - 1) try w.print(", ", .{});
-        }
-    }
-
-    pub fn format(self: Node, w: *Io.Writer) Io.Writer.Error!void {
-        switch (self) {
-            .number => |n| try w.print("{d}", .{n}),
-            .symbol => |s| try w.print("{s}", .{s}),
-            .ref => |r| try w.print("${f}", .{r}),
-            .unary_op => |o| switch (o.op) {
-                .NOT => try w.print("{s} {f}", .{ @tagName(o.op), o.arg }),
-                else => try w.print("{s}{f}", .{ @tagName(o.op), o.arg }),
-            },
-            .binary_op => |o| {
-                switch (o.op) {
-                    .@"." => try w.print("{f}{s}{f}", .{ o.lhs, @tagName(o.op), o.rhs }),
-                    else => try w.print("({f} {s} {f})", .{ o.lhs, @tagName(o.op), o.rhs }),
-                }
-            },
-            .assign_stmt => |a| {
-                try w.print("{f} = {f}", .{ a.lvalue, a.rvalue });
-            },
-            .assign_expr => |a| {
-                try w.print("({f} = {f})", .{ a.lvalue, a.rvalue });
-            },
-            .call => |c| {
-                try w.print("{f}(", .{c.method});
-                try formatList(w, c.args);
-                try w.print(")", .{});
-            },
-            .array => |a| {
-                try w.print("[", .{});
-                try formatList(w, a);
-                try w.print("]", .{});
-            },
-            else => unreachable,
-        }
-    }
-
-    pub fn create(gpa: Allocator, node: Node) ASTError!*Node {
-        const self = try gpa.create(ASTNode);
-        self.* = node;
-        return self;
-    }
-};
-
-const ASTError = toker.TokerError || error{
-    OutOfMemory,
+const ASTError = toker.TokerError || Allocator.Error || error{
+    Overflow,
     MissingParen,
     MissingTerminal,
     MissingComma,
+    BadString,
 };
+
+const NodeRef = *const ASTNode;
 
 pub const ASTParser = struct {
     const Self = @This();
@@ -101,7 +32,7 @@ pub const ASTParser = struct {
         if (self.current == null) self.eof = true;
     }
 
-    fn newNode(self: *const Self, proto: ASTNode) ASTError!*ASTNode {
+    fn newNode(self: *const Self, proto: ASTNode) Allocator.Error!*ASTNode {
         return try ASTNode.create(self.gpa, proto);
     }
 
@@ -210,6 +141,168 @@ pub const ASTParser = struct {
         };
     }
 
+    const StringToken = union(enum) {
+        literal: []const u8,
+        interp: []const u8,
+    };
+
+    const StringScanner = struct {
+        const SS = @This();
+        str: []const u8,
+        pos: usize = 0,
+
+        pub fn available(self: SS) usize {
+            return self.str.len - self.pos;
+        }
+
+        pub fn eof(self: SS) bool {
+            return self.available() == 0;
+        }
+
+        pub fn peek(self: SS) u8 {
+            assert(!self.eof());
+            return self.str[self.pos];
+        }
+
+        pub fn next(self: *SS) u8 {
+            assert(!self.eof());
+            defer self.pos += 1;
+            return self.str[self.pos];
+        }
+
+        pub fn take(self: *SS, len: usize) []const u8 {
+            assert(self.available() >= len);
+            defer self.pos += len;
+            return self.str[self.pos .. self.pos + len];
+        }
+
+        pub fn nextToken(self: *SS) ?StringToken {
+            if (self.eof()) return null;
+            const nc = self.next();
+            if (nc == '$') {
+                const start = self.pos;
+                while (!self.eof() and isInterp(self.peek()))
+                    _ = self.next();
+
+                return if (self.pos == start)
+                    .{ .literal = "$" }
+                else
+                    .{ .interp = self.str[start..self.pos] };
+            } else {
+                const start = self.pos - 1;
+                while (!self.eof() and self.peek() != '$') {
+                    if (self.next() == '\\' and !self.eof())
+                        _ = self.next();
+                }
+                return .{ .literal = self.str[start..self.pos] };
+            }
+        }
+    };
+
+    fn parseSingleQuotedString(self: *Self, str: []const u8) ASTError!NodeRef {
+        try self.advance();
+
+        var ss = StringScanner{ .str = str };
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        defer buf.deinit(self.gpa);
+
+        while (!ss.eof()) {
+            const nc = ss.next();
+            if (nc == '\\' and !ss.eof()) {
+                const qc = ss.next();
+                if (qc != '\\' and qc != '\'')
+                    try buf.append(self.gpa, nc);
+                try buf.append(self.gpa, qc);
+            } else {
+                try buf.append(self.gpa, nc);
+            }
+        }
+
+        return self.newNode(.{ .string = try buf.toOwnedSlice(self.gpa) });
+    }
+
+    fn parseDoubleQuotedLiteral(self: *Self, literal: []const u8) ASTError!NodeRef {
+        var ss = StringScanner{ .str = literal };
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        defer buf.deinit(self.gpa);
+
+        while (!ss.eof()) {
+            const nc = ss.next();
+            if (nc == '\\' and !ss.eof()) {
+                const qc = ss.next();
+                switch (qc) {
+                    '$', '\\', '\"' => try buf.append(self.gpa, qc),
+                    'a' => try buf.append(self.gpa, 0x07),
+                    'b' => try buf.append(self.gpa, 0x08),
+                    't' => try buf.append(self.gpa, 0x09),
+                    'n' => try buf.append(self.gpa, 0x0a),
+                    'f' => try buf.append(self.gpa, 0x0c),
+                    'r' => try buf.append(self.gpa, 0x0d),
+                    'e' => try buf.append(self.gpa, 0x1b),
+                    'o' => {
+                        if (ss.available() < 3) return ASTError.BadString;
+                        const cc = try std.fmt.parseInt(u8, ss.take(3), 8);
+                        try buf.append(self.gpa, cc);
+                    },
+                    'x' => {
+                        if (ss.available() < 2) return ASTError.BadString;
+                        const cc = try std.fmt.parseInt(u8, ss.take(2), 16);
+                        try buf.append(self.gpa, cc);
+                    },
+                    else => return ASTError.BadString,
+                }
+            } else {
+                try buf.append(self.gpa, nc);
+            }
+        }
+
+        return self.newNode(.{ .string = try buf.toOwnedSlice(self.gpa) });
+    }
+
+    fn parseInterpolation(self: *Self, interp: []const u8) ASTError!NodeRef {
+        var node: ?NodeRef = null;
+        var pos: usize = 0;
+        while (pos < interp.len) : (pos += 1) {
+            const start = pos;
+            while (pos < interp.len and interp[pos] != '.')
+                pos += 1;
+            if (pos == start) return ASTError.SyntaxError;
+            const rhs = try self.newNode(.{ .symbol = interp[start..pos] });
+            node = if (node) |lhs|
+                try self.newNode(.{
+                    .binary_op = .{ .op = .@".", .lhs = lhs, .rhs = rhs },
+                })
+            else
+                rhs;
+        }
+        return node.?;
+    }
+
+    fn parseDoubleQuotedString(self: *Self, str: []const u8) ASTError!NodeRef {
+        try self.advance();
+        var node: ?NodeRef = null;
+        var ss = StringScanner{ .str = str };
+
+        while (ss.nextToken()) |tok| {
+            const rhs = switch (tok) {
+                .literal => |l| try self.parseDoubleQuotedLiteral(l),
+                .interp => |i| try self.parseInterpolation(i),
+            };
+            node = if (node) |lhs|
+                try self.newNode(.{
+                    .binary_op = .{ .op = ._, .lhs = lhs, .rhs = rhs },
+                })
+            else
+                rhs;
+        }
+
+        if (node) |n|
+            return n;
+
+        // Default empty string
+        return self.newNode(.{ .string = "" });
+    }
+
     fn parseAtom(self: *Self) ASTError!NodeRef {
         switch (self.current.?.tok) {
             .keyword => |kw| {
@@ -248,6 +341,12 @@ pub const ASTParser = struct {
             },
             .symbol => {
                 return try self.parseRef();
+            },
+            .sq_string => |s| {
+                return try self.parseSingleQuotedString(s);
+            },
+            .dq_string => |s| {
+                return try self.parseDoubleQuotedString(s);
             },
             else => return ASTError.SyntaxError,
         }
@@ -328,6 +427,12 @@ test "parseExpr" {
         .{ .src = "[% a = 3 %]", .want = "a = 3" },
         .{ .src = "[% ((a = 3)) %]", .want = "(a = 3)" },
         .{ .src = "[% a = (b = 3) %]", .want = "a = (b = 3)" },
+        .{ .src = "[% 'Hello' %]", .want = "\"Hello\"" },
+        .{ .src = "[% \"Hello\" %]", .want = "\"Hello\"" },
+        .{ .src = "[% \"Hello\x41\" %]", .want = "\"HelloA\"" },
+        .{ .src = "[% \"Hello $name\" %]", .want = "(\"Hello \" _ name)" },
+        .{ .src = "[% \"Hello $name.first\" %]", .want = "(\"Hello \" _ name.first)" },
+        .{ .src = "[% \"$name\" %]", .want = "name" },
     };
 
     for (cases) |case| {
@@ -362,3 +467,4 @@ const Io = std.Io;
 
 const toker = @import("./tokeniser.zig");
 const Keyword = toker.Keyword;
+const ASTNode = @import("./node.zig").ASTNode;
