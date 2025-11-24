@@ -433,6 +433,7 @@ test "parseExpr" {
         .{ .src = "[% \"Hello $name\" %]", .want = "(\"Hello \" _ name)" },
         .{ .src = "[% \"Hello $name.first\" %]", .want = "(\"Hello \" _ name.first)" },
         .{ .src = "[% \"$name\" %]", .want = "name" },
+        .{ .src = "[% \"$foo$bar\" %]", .want = "(foo _ bar)" },
     };
 
     for (cases) |case| {
