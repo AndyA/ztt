@@ -555,7 +555,7 @@ test "parseExpr" {
         .{ .src = "[% 'Hello' %]", .want = "\"Hello\"" },
         .{ .src = "[% \"Hello\" %]", .want = "\"Hello\"" },
         .{ .src = "[% \"Hello\\x00\" %]", .want = "\"Hello\\x00\"" },
-        .{ .src = "[% \"Hello\x41\" %]", .want = "\"HelloA\"" },
+        .{ .src = "[% \"Hello\\x41\" %]", .want = "\"HelloA\"" },
         .{ .src = "[% \"Hello $name\" %]", .want = "(\"Hello \" _ name)" },
         .{ .src = "[% \"Hello $name.first\" %]", .want = "(\"Hello \" _ name.first)" },
         .{ .src = "[% \"$name\" %]", .want = "name" },
