@@ -2,7 +2,6 @@
 
 ## TODO
 
-- fix toker location reporting
 - how to handle barewords (PROCESS / INCUDE / INSERT)
 
 ## Syntax
