@@ -8,6 +8,8 @@ const ASTError = toker.TokerError || Allocator.Error || error{
     MissingTerminal,
     MissingComma,
     MissingColon,
+    MissingBrace,
+    MissingFatArrow,
     BadString,
 };
 
@@ -150,6 +152,50 @@ pub const ASTParser = struct {
             }
         }
         return list.items;
+    }
+
+    fn parseObject(self: *Self) ASTError!EltRef {
+        var keys: std.ArrayListUnmanaged(EltRef) = .empty;
+        var values: std.ArrayListUnmanaged(EltRef) = .empty;
+        const state = self.state;
+        try self.advance();
+
+        while (true) {
+            if (self.eof())
+                return ASTError.MissingTerminal;
+            if (self.nextKeywordIs(.@"}")) {
+                try self.advance();
+                break;
+            }
+
+            const key = try self.parseExpr();
+            switch (key.*.node) {
+                .assign_stmt => |a| {
+                    try keys.append(self.gpa, a.lvalue);
+                    try values.append(self.gpa, a.rvalue);
+                },
+                else => {
+                    try keys.append(self.gpa, key);
+
+                    if (!self.nextKeywordIs(.@"=>"))
+                        return ASTError.MissingFatArrow;
+                    try self.advance();
+
+                    try values.append(self.gpa, try self.parseExpr());
+                },
+            }
+
+            if (self.nextKeywordIs(.@",")) {
+                try self.advance();
+            } else if (self.nextKeywordIs(.@"}")) {
+                try self.advance();
+                break;
+            }
+        }
+        return try self.newNode(
+            .{ .object = .{ .keys = keys.items, .values = values.items } },
+            state.loc,
+        );
     }
 
     fn parseBinOp(self: *Self, allow: []const Keyword, parseNext: ParseFn) ASTError!EltRef {
@@ -375,6 +421,9 @@ pub const ASTParser = struct {
                             state.loc,
                         );
                     },
+                    .@"{" => {
+                        return try self.parseObject();
+                    },
                     else => return ASTError.SyntaxError,
                 }
             },
@@ -500,6 +549,7 @@ test "parseExpr" {
         .{ .src = "[% a = (b = 3) %]", .want = "a = (b = 3)" },
         .{ .src = "[% 'Hello' %]", .want = "\"Hello\"" },
         .{ .src = "[% \"Hello\" %]", .want = "\"Hello\"" },
+        .{ .src = "[% \"Hello\\x00\" %]", .want = "\"Hello\\x00\"" },
         .{ .src = "[% \"Hello\x41\" %]", .want = "\"HelloA\"" },
         .{ .src = "[% \"Hello $name\" %]", .want = "(\"Hello \" _ name)" },
         .{ .src = "[% \"Hello $name.first\" %]", .want = "(\"Hello \" _ name.first)" },
@@ -507,6 +557,11 @@ test "parseExpr" {
         .{ .src = "[% \"$foo$bar$baz\" %]", .want = "((foo _ bar) _ baz)" },
         .{ .src = "[% a ? 0 : 1 %]", .want = "a ? 0 : 1" },
         .{ .src = "[% a ? b ? 1 : 2 : c ? 3 : 4 %]", .want = "a ? b ? 1 : 2 : c ? 3 : 4" },
+        .{ .src = "[% {} %]", .want = "{}" },
+        .{ .src = "[% {a => 1} %]", .want = "{a => 1}" },
+        .{ .src = "[% {a = 1} %]", .want = "{a => 1}" },
+        .{ .src = "[% {a => 1, b = 2} %]", .want = "{a => 1, b => 2}" },
+        .{ .src = "[% {a = 1 b = 2} %]", .want = "{a => 1, b => 2}" },
     };
 
     for (cases) |case| {

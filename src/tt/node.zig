@@ -13,6 +13,10 @@ pub const ASTNode = union(enum) {
     string: []const u8,
     number: f64,
     array: []EltRef,
+    object: struct {
+        keys: []EltRef,
+        values: []EltRef,
+    },
 
     block: []EltRef, // top level and block bodies
 
@@ -28,13 +32,6 @@ pub const ASTNode = union(enum) {
 
     IF: Cond,
 
-    fn formatList(w: *Io.Writer, list: []EltRef) Io.Writer.Error!void {
-        for (list, 0..) |item, index| {
-            try w.print("{f}", .{item});
-            if (index < list.len - 1) try w.print(", ", .{});
-        }
-    }
-
     fn formatString(w: *Io.Writer, str: []const u8) Io.Writer.Error!void {
         for (str) |c| {
             switch (c) {
@@ -48,11 +45,26 @@ pub const ASTNode = union(enum) {
                         0x0d => try w.print("\\r", .{}),
                         0x1b => try w.print("\\e", .{}),
                         '$', '\\', '"' => try w.print("\\{c}", .{c}),
-                        else => try w.print("{x:0>2}", .{c}),
+                        else => try w.print("\\x{x:0>2}", .{c}),
                     }
                 },
                 else => try w.print("{c}", .{c}),
             }
+        }
+    }
+
+    fn formatList(w: *Io.Writer, list: []EltRef) Io.Writer.Error!void {
+        for (list, 0..) |item, index| {
+            try w.print("{f}", .{item});
+            if (index < list.len - 1) try w.print(", ", .{});
+        }
+    }
+
+    fn formatObject(w: *Io.Writer, keys: []EltRef, values: []EltRef) Io.Writer.Error!void {
+        assert(keys.len == values.len);
+        for (keys, values, 0..) |k, v, index| {
+            try w.print("{f} => {f}", .{ k, v });
+            if (index < keys.len - 1) try w.print(", ", .{});
         }
     }
 
@@ -86,6 +98,11 @@ pub const ASTNode = union(enum) {
                 try w.print("[", .{});
                 try formatList(w, a);
                 try w.print("]", .{});
+            },
+            .object => |o| {
+                try w.print("{{", .{});
+                try formatObject(w, o.keys, o.values);
+                try w.print("}}", .{});
             },
             .string => |s| {
                 // TODO escape
@@ -124,6 +141,7 @@ pub const ASTElement = struct {
 };
 
 const std = @import("std");
+const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
