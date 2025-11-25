@@ -7,6 +7,7 @@ const ASTError = toker.TokerError || Allocator.Error || error{
     MissingParen,
     MissingTerminal,
     MissingComma,
+    MissingColon,
     BadString,
 };
 
@@ -439,8 +440,29 @@ pub const ASTParser = struct {
         return try self.parseBinOp(&.{.OR}, parseAnd);
     }
 
+    fn parseCond(self: *Self) ASTError!EltRef {
+        const cond = try self.parseOr();
+        if (!self.nextKeywordIs(.@"?"))
+            return cond;
+        const state = self.state;
+
+        try self.advance();
+        const THEN = try self.parseExpr();
+
+        if (!self.nextKeywordIs(.@":"))
+            return ASTError.MissingColon;
+
+        try self.advance();
+        const ELSE = try self.parseExpr();
+
+        return self.newNode(
+            .{ .if_op = .{ .cond = cond, .THEN = THEN, .ELSE = ELSE } },
+            state.loc,
+        );
+    }
+
     pub fn parseExpr(self: *Self) ASTError!EltRef {
-        return try self.parseOr();
+        return try self.parseCond();
     }
 };
 
@@ -480,6 +502,8 @@ test "parseExpr" {
         .{ .src = "[% \"Hello $name.first\" %]", .want = "(\"Hello \" _ name.first)" },
         .{ .src = "[% \"$name\" %]", .want = "name" },
         .{ .src = "[% \"$foo$bar$baz\" %]", .want = "((foo _ bar) _ baz)" },
+        .{ .src = "[% a ? 0 : 1 %]", .want = "a ? 0 : 1" },
+        .{ .src = "[% a ? b ? 1 : 2 : c ? 3 : 4 %]", .want = "a ? b ? 1 : 2 : c ? 3 : 4" },
     };
 
     for (cases) |case| {

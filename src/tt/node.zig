@@ -2,6 +2,12 @@ const EltRef = *const ASTElement;
 
 pub const ASTNode = union(enum) {
     const Node = @This();
+    const Assign = struct { lvalue: EltRef, rvalue: EltRef };
+    const Cond = struct {
+        cond: EltRef, // expr
+        THEN: EltRef, // block
+        ELSE: EltRef, // block
+    };
 
     literal: []const u8,
     string: []const u8,
@@ -13,18 +19,14 @@ pub const ASTNode = union(enum) {
     symbol: []const u8,
     ref: EltRef,
     call: struct { method: EltRef, args: []EltRef },
-
-    assign_stmt: struct { lvalue: EltRef, rvalue: EltRef },
-    assign_expr: struct { lvalue: EltRef, rvalue: EltRef },
+    assign_stmt: Assign,
+    assign_expr: Assign,
 
     unary_op: struct { op: Keyword, arg: EltRef },
     binary_op: struct { op: Keyword, lhs: EltRef, rhs: EltRef },
+    if_op: Cond,
 
-    IF: struct {
-        cond: EltRef, // expr
-        THEN: EltRef, // block
-        ELSE: EltRef, // block
-    },
+    IF: Cond,
 
     fn formatList(w: *Io.Writer, list: []EltRef) Io.Writer.Error!void {
         for (list, 0..) |item, index| {
@@ -90,6 +92,9 @@ pub const ASTNode = union(enum) {
                 try w.print("\"", .{});
                 try formatString(w, s);
                 try w.print("\"", .{});
+            },
+            .if_op => |i| {
+                try w.print("{f} ? {f} : {f}", .{ i.cond, i.THEN, i.ELSE });
             },
             else => unreachable,
         }
