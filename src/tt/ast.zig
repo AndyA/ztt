@@ -141,7 +141,7 @@ pub const ASTParser = struct {
             }
             const item = try self.parseExpr();
             try list.append(self.gpa, item);
-            // TODO calling nextKeywordIs a lot here...
+
             if (self.nextKeywordIs(.@",")) {
                 try self.advance();
             } else if (self.nextKeywordIs(end)) {
