@@ -192,6 +192,9 @@ pub const ASTParser = struct {
                 break;
             }
         }
+
+        assert(keys.items.len == values.items.len);
+
         return try self.newNode(
             .{ .object = .{ .keys = keys.items, .values = values.items } },
             state.loc,
