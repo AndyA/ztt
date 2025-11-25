@@ -128,7 +128,14 @@ pub const TokenIter = struct {
     pos: u32 = 0,
     line_number: u32 = 1,
     line_start: u32 = 0,
-    state: enum { TEXT, START, EXPR, COMMENT, BLOCK_COMMENT } = .TEXT,
+    state: enum {
+        TEXT,
+        START,
+        EXPR,
+        SEMI,
+        COMMENT,
+        BLOCK_COMMENT,
+    } = .TEXT,
 
     pub fn init(name: []const u8, src: []const u8) Self {
         return Self{ .name = name, .src = src };
@@ -305,6 +312,10 @@ pub const TokenIter = struct {
                         }
                         break :parse .{ .keyword = if (sign == '+') .@"+" else .@"-" };
                     },
+                    ';' => {
+                        self.state = .SEMI;
+                        break :parse .{ .end = .{} };
+                    },
                     '%' => {
                         if (self.isNext("]")) {
                             self.state = .TEXT;
@@ -338,6 +349,10 @@ pub const TokenIter = struct {
                 if (keywordLookup(op)) |kw|
                     break :parse .{ .keyword = kw };
                 break :parse error.SyntaxError;
+            },
+            .SEMI => {
+                self.state = .EXPR;
+                break :parse .{ .start = .{} };
             },
             .COMMENT => {
                 while (true) {
@@ -510,6 +525,17 @@ test TokenIter {
             .{ .end = .{} },
             .{ .literal = " world" },
         } },
+        .{
+            .src = "[% a; b %]",
+            .want = &[_]T{
+                .{ .start = .{} },
+                .{ .symbol = "a" },
+                .{ .end = .{} },
+                .{ .start = .{} },
+                .{ .symbol = "b" },
+                .{ .end = .{} },
+            },
+        },
     };
 
     for (cases) |case| {
