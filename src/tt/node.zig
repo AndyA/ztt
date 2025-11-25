@@ -1,31 +1,32 @@
-const NodeRef = *const ASTNode;
+const EltRef = *const ASTElement;
+
 pub const ASTNode = union(enum) {
     const Node = @This();
 
     literal: []const u8,
     string: []const u8,
     number: f64,
-    array: []NodeRef,
+    array: []EltRef,
 
-    block: []NodeRef, // top level and block bodies
+    block: []EltRef, // top level and block bodies
 
     symbol: []const u8,
-    ref: NodeRef,
-    call: struct { method: NodeRef, args: []NodeRef },
+    ref: EltRef,
+    call: struct { method: EltRef, args: []EltRef },
 
-    assign_stmt: struct { lvalue: NodeRef, rvalue: NodeRef },
-    assign_expr: struct { lvalue: NodeRef, rvalue: NodeRef },
+    assign_stmt: struct { lvalue: EltRef, rvalue: EltRef },
+    assign_expr: struct { lvalue: EltRef, rvalue: EltRef },
 
-    unary_op: struct { op: Keyword, arg: NodeRef },
-    binary_op: struct { op: Keyword, lhs: NodeRef, rhs: NodeRef },
+    unary_op: struct { op: Keyword, arg: EltRef },
+    binary_op: struct { op: Keyword, lhs: EltRef, rhs: EltRef },
 
     IF: struct {
-        cond: NodeRef, // expr
-        THEN: NodeRef, // block
-        ELSE: NodeRef, // block
+        cond: EltRef, // expr
+        THEN: EltRef, // block
+        ELSE: EltRef, // block
     },
 
-    fn formatList(w: *Io.Writer, list: []NodeRef) Io.Writer.Error!void {
+    fn formatList(w: *Io.Writer, list: []EltRef) Io.Writer.Error!void {
         for (list, 0..) |item, index| {
             try w.print("{f}", .{item});
             if (index < list.len - 1) try w.print(", ", .{});
@@ -101,9 +102,26 @@ pub const ASTNode = union(enum) {
     }
 };
 
+pub const ASTElement = struct {
+    const Self = @This();
+    node: ASTNode,
+    loc: Location,
+
+    pub fn create(gpa: Allocator, node: ASTNode, loc: Location) Allocator.Error!*Self {
+        const self = try gpa.create(Self);
+        self.* = .{ .node = node, .loc = loc };
+        return self;
+    }
+
+    pub fn format(self: Self, w: *Io.Writer) Io.Writer.Error!void {
+        try self.node.format(w);
+    }
+};
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
 const toker = @import("./tokeniser.zig");
+const Location = toker.Location;
 const Keyword = toker.Keyword;

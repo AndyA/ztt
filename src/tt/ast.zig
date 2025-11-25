@@ -10,25 +10,84 @@ const ASTError = toker.TokerError || Allocator.Error || error{
     BadString,
 };
 
-const NodeRef = *const ASTNode;
+const EltRef = *const ASTElement;
 
 const ParserState = struct {
-    tok: ?toker.Token = null,
-    loc: toker.Location = .{},
+    tok: ?Token = null,
+    loc: Location = .{},
 
     fn eof(self: *const ParserState) bool {
         return self.tok == null;
     }
 };
 
+const StringToken = union(enum) {
+    literal: []const u8,
+    interp: []const u8,
+};
+
+const StringScanner = struct {
+    const SS = @This();
+    str: []const u8,
+    pos: usize = 0,
+
+    pub fn available(self: SS) usize {
+        return self.str.len - self.pos;
+    }
+
+    pub fn eof(self: SS) bool {
+        return self.available() == 0;
+    }
+
+    pub fn peek(self: SS) u8 {
+        assert(!self.eof());
+        return self.str[self.pos];
+    }
+
+    pub fn next(self: *SS) u8 {
+        assert(!self.eof());
+        defer self.pos += 1;
+        return self.str[self.pos];
+    }
+
+    pub fn take(self: *SS, len: usize) []const u8 {
+        assert(self.available() >= len);
+        defer self.pos += len;
+        return self.str[self.pos .. self.pos + len];
+    }
+
+    pub fn nextToken(self: *SS) ?StringToken {
+        if (self.eof()) return null;
+        const nc = self.next();
+        if (nc == '$') {
+            const start = self.pos;
+            while (!self.eof() and isInterp(self.peek()))
+                _ = self.next();
+
+            return if (self.pos == start)
+                .{ .literal = "$" }
+            else
+                .{ .interp = self.str[start..self.pos] };
+        } else {
+            const start = self.pos - 1;
+            while (!self.eof() and self.peek() != '$') {
+                if (self.next() == '\\' and !self.eof())
+                    _ = self.next();
+            }
+            return .{ .literal = self.str[start..self.pos] };
+        }
+    }
+};
+
 pub const ASTParser = struct {
     const Self = @This();
+    const ParseFn = fn (*Self) ASTError!EltRef;
 
     gpa: Allocator,
-    iter: toker.TokenIter,
+    iter: TokenIter,
     state: ParserState = .{},
 
-    pub fn init(gpa: Allocator, iter: toker.TokenIter) ASTError!Self {
+    pub fn init(gpa: Allocator, iter: TokenIter) ASTError!Self {
         var self = Self{ .gpa = gpa, .iter = iter };
         try self.nextState();
         return self;
@@ -49,8 +108,8 @@ pub const ASTParser = struct {
         try self.nextState();
     }
 
-    fn newNode(self: *const Self, proto: ASTNode) Allocator.Error!*ASTNode {
-        return try ASTNode.create(self.gpa, proto);
+    fn newNode(self: *const Self, node: ASTNode, loc: Location) Allocator.Error!*ASTElement {
+        return try ASTElement.create(self.gpa, node, loc);
     }
 
     fn nextKeywordIs(self: *Self, want: Keyword) bool {
@@ -68,8 +127,8 @@ pub const ASTParser = struct {
         return false;
     }
 
-    fn parseList(self: *Self, end: Keyword, require_commas: bool) ASTError![]NodeRef {
-        var list: std.ArrayListUnmanaged(NodeRef) = .empty;
+    fn parseList(self: *Self, end: Keyword, require_commas: bool) ASTError![]EltRef {
+        var list: std.ArrayListUnmanaged(EltRef) = .empty;
         while (true) {
             if (self.eof())
                 return ASTError.MissingTerminal;
@@ -92,18 +151,18 @@ pub const ASTParser = struct {
         return list.items;
     }
 
-    const ParseFn = fn (*Self) ASTError!NodeRef;
-
-    fn parseBinOp(self: *Self, allow: []const Keyword, parseNext: ParseFn) ASTError!NodeRef {
+    fn parseBinOp(self: *Self, allow: []const Keyword, parseNext: ParseFn) ASTError!EltRef {
         var lhs = try parseNext(self);
         while (!self.eof()) {
-            switch (self.state.tok.?) {
+            const state = self.state;
+            switch (state.tok.?) {
                 .keyword => |op| {
                     if (allowed(allow, op)) {
                         try self.advance();
                         const rhs = try parseNext(self);
                         lhs = try self.newNode(
                             .{ .binary_op = .{ .op = op, .lhs = lhs, .rhs = rhs } },
+                            state.loc,
                         );
                     } else {
                         break;
@@ -115,108 +174,55 @@ pub const ASTParser = struct {
         return lhs;
     }
 
-    fn parseVar(self: *Self) ASTError!NodeRef {
-        switch (self.state.tok.?) {
+    fn parseVar(self: *Self) ASTError!EltRef {
+        const state = self.state;
+        switch (state.tok.?) {
             .keyword => |kw| {
                 if (kw == .@"$") {
                     try self.advance();
                     const ref = try self.parseVar();
-                    return try self.newNode(.{ .ref = ref });
+                    return try self.newNode(.{ .ref = ref }, state.loc);
                 }
                 return ASTError.SyntaxError;
             },
             .symbol => |sym| {
                 try self.advance();
-                return try self.newNode(.{ .symbol = sym });
+                return try self.newNode(.{ .symbol = sym }, state.loc);
             },
             else => return ASTError.SyntaxError,
         }
     }
 
-    fn parseCall(self: *Self) ASTError!NodeRef {
+    fn parseCall(self: *Self) ASTError!EltRef {
+        const state = self.state;
         var call = try self.parseVar();
         while (self.nextKeywordIs(.@"(")) {
             try self.advance();
             const args = try self.parseList(.@")", true);
             call = try self.newNode(
                 .{ .call = .{ .method = call, .args = args } },
+                state.loc,
             );
         }
         return call;
     }
 
-    fn parseRef(self: *Self) ASTError!NodeRef {
+    fn parseRef(self: *Self) ASTError!EltRef {
         return self.parseBinOp(&.{.@"."}, parseCall);
     }
 
-    fn parenthesise(self: *const Self, node: NodeRef) ASTError!NodeRef {
-        return switch (node.*) {
+    fn parenthesise(self: *const Self, elt: EltRef) ASTError!EltRef {
+        return switch (elt.*.node) {
             .assign_stmt => |a| try self.newNode(
                 .{ .assign_expr = .{ .lvalue = a.lvalue, .rvalue = a.rvalue } },
+                elt.loc,
             ),
-            else => node,
+            else => elt,
         };
     }
 
-    const StringToken = union(enum) {
-        literal: []const u8,
-        interp: []const u8,
-    };
-
-    const StringScanner = struct {
-        const SS = @This();
-        str: []const u8,
-        pos: usize = 0,
-
-        pub fn available(self: SS) usize {
-            return self.str.len - self.pos;
-        }
-
-        pub fn eof(self: SS) bool {
-            return self.available() == 0;
-        }
-
-        pub fn peek(self: SS) u8 {
-            assert(!self.eof());
-            return self.str[self.pos];
-        }
-
-        pub fn next(self: *SS) u8 {
-            assert(!self.eof());
-            defer self.pos += 1;
-            return self.str[self.pos];
-        }
-
-        pub fn take(self: *SS, len: usize) []const u8 {
-            assert(self.available() >= len);
-            defer self.pos += len;
-            return self.str[self.pos .. self.pos + len];
-        }
-
-        pub fn nextToken(self: *SS) ?StringToken {
-            if (self.eof()) return null;
-            const nc = self.next();
-            if (nc == '$') {
-                const start = self.pos;
-                while (!self.eof() and isInterp(self.peek()))
-                    _ = self.next();
-
-                return if (self.pos == start)
-                    .{ .literal = "$" }
-                else
-                    .{ .interp = self.str[start..self.pos] };
-            } else {
-                const start = self.pos - 1;
-                while (!self.eof() and self.peek() != '$') {
-                    if (self.next() == '\\' and !self.eof())
-                        _ = self.next();
-                }
-                return .{ .literal = self.str[start..self.pos] };
-            }
-        }
-    };
-
-    fn parseSingleQuotedString(self: *Self, str: []const u8) ASTError!NodeRef {
+    fn parseSingleQuotedString(self: *Self, str: []const u8) ASTError!EltRef {
+        const state = self.state;
         try self.advance();
 
         var ss = StringScanner{ .str = str };
@@ -235,10 +241,14 @@ pub const ASTParser = struct {
             }
         }
 
-        return self.newNode(.{ .string = try buf.toOwnedSlice(self.gpa) });
+        return self.newNode(
+            .{ .string = try buf.toOwnedSlice(self.gpa) },
+            state.loc,
+        );
     }
 
-    fn parseDoubleQuotedLiteral(self: *Self, literal: []const u8) ASTError!NodeRef {
+    fn parseDoubleQuotedLiteral(self: *Self, literal: []const u8) ASTError!EltRef {
+        const state = self.state;
         var ss = StringScanner{ .str = literal };
         var buf: std.ArrayListUnmanaged(u8) = .empty;
         defer buf.deinit(self.gpa);
@@ -273,31 +283,39 @@ pub const ASTParser = struct {
             }
         }
 
-        return self.newNode(.{ .string = try buf.toOwnedSlice(self.gpa) });
+        return self.newNode(
+            .{ .string = try buf.toOwnedSlice(self.gpa) },
+            state.loc,
+        );
     }
 
-    fn parseInterpolation(self: *Self, interp: []const u8) ASTError!NodeRef {
-        var node: ?NodeRef = null;
+    fn parseInterpolation(self: *Self, interp: []const u8) ASTError!EltRef {
+        var node: ?EltRef = null;
         var pos: usize = 0;
         while (pos < interp.len) : (pos += 1) {
             const start = pos;
             while (pos < interp.len and interp[pos] != '.')
                 pos += 1;
             if (pos == start) return ASTError.SyntaxError;
-            const rhs = try self.newNode(.{ .symbol = interp[start..pos] });
+            const rhs = try self.newNode(
+                .{ .symbol = interp[start..pos] },
+                self.state.loc,
+            );
             node = if (node) |lhs|
-                try self.newNode(.{
-                    .binary_op = .{ .op = .@".", .lhs = lhs, .rhs = rhs },
-                })
+                try self.newNode(
+                    .{ .binary_op = .{ .op = .@".", .lhs = lhs, .rhs = rhs } },
+                    self.state.loc, // TODO that's not right
+                )
             else
                 rhs;
         }
         return node.?;
     }
 
-    fn parseDoubleQuotedString(self: *Self, str: []const u8) ASTError!NodeRef {
+    fn parseDoubleQuotedString(self: *Self, str: []const u8) ASTError!EltRef {
+        const state = self.state;
         try self.advance();
-        var node: ?NodeRef = null;
+        var node: ?EltRef = null;
         var ss = StringScanner{ .str = str };
 
         while (ss.nextToken()) |tok| {
@@ -306,9 +324,10 @@ pub const ASTParser = struct {
                 .interp => |i| try self.parseInterpolation(i),
             };
             node = if (node) |lhs|
-                try self.newNode(.{
-                    .binary_op = .{ .op = ._, .lhs = lhs, .rhs = rhs },
-                })
+                try self.newNode(
+                    .{ .binary_op = .{ .op = ._, .lhs = lhs, .rhs = rhs } },
+                    state.loc,
+                )
             else
                 rhs;
         }
@@ -317,11 +336,15 @@ pub const ASTParser = struct {
             return n;
 
         // Default empty string
-        return self.newNode(.{ .string = "" });
+        return self.newNode(
+            .{ .string = "" },
+            state.loc,
+        );
     }
 
-    fn parseAtom(self: *Self) ASTError!NodeRef {
-        switch (self.state.tok.?) {
+    fn parseAtom(self: *Self) ASTError!EltRef {
+        const state = self.state;
+        switch (state.tok.?) {
             .keyword => |kw| {
                 switch (kw) {
                     .@"-", .NOT => |op| {
@@ -329,6 +352,7 @@ pub const ASTParser = struct {
                         const arg = try self.parseAtom();
                         return try self.newNode(
                             .{ .unary_op = .{ .op = op, .arg = arg } },
+                            state.loc,
                         );
                     },
                     .@"(" => {
@@ -346,13 +370,16 @@ pub const ASTParser = struct {
                     .@"[" => {
                         try self.advance();
                         const array = try self.parseList(.@"]", false);
-                        return try self.newNode(.{ .array = array });
+                        return try self.newNode(
+                            .{ .array = array },
+                            state.loc,
+                        );
                     },
                     else => return ASTError.SyntaxError,
                 }
             },
             .number => |n| {
-                const node = try self.newNode(.{ .number = n });
+                const node = try self.newNode(.{ .number = n }, state.loc);
                 try self.advance();
                 return node;
             },
@@ -369,48 +396,50 @@ pub const ASTParser = struct {
         }
     }
 
-    fn parseAssign(self: *Self) ASTError!NodeRef {
+    fn parseAssign(self: *Self) ASTError!EltRef {
         const lvalue = try self.parseAtom();
+        const state = self.state;
         if (self.nextKeywordIs(.@"=")) {
             try self.advance();
             const rvalue = try self.parseExpr();
             return self.newNode(
                 .{ .assign_stmt = .{ .lvalue = lvalue, .rvalue = rvalue } },
+                state.loc,
             );
         }
         return lvalue;
     }
 
-    fn parseMulDiv(self: *Self) ASTError!NodeRef {
+    fn parseMulDiv(self: *Self) ASTError!EltRef {
         return try self.parseBinOp(
             &.{ .@"*", .@"/", .DIV, .MOD },
             parseAssign,
         );
     }
 
-    fn parseAddSub(self: *Self) ASTError!NodeRef {
+    fn parseAddSub(self: *Self) ASTError!EltRef {
         return try self.parseBinOp(
             &.{ .@"+", .@"-", ._ },
             parseMulDiv,
         );
     }
 
-    fn parseInequality(self: *Self) ASTError!NodeRef {
+    fn parseInequality(self: *Self) ASTError!EltRef {
         return try self.parseBinOp(
             &.{ .@"<", .@"<=", .@">", .@">=", .@"==", .@"!=" },
             parseAddSub,
         );
     }
 
-    fn parseAnd(self: *Self) ASTError!NodeRef {
+    fn parseAnd(self: *Self) ASTError!EltRef {
         return try self.parseBinOp(&.{.AND}, parseInequality);
     }
 
-    fn parseOr(self: *Self) ASTError!NodeRef {
+    fn parseOr(self: *Self) ASTError!EltRef {
         return try self.parseBinOp(&.{.OR}, parseAnd);
     }
 
-    pub fn parseExpr(self: *Self) ASTError!NodeRef {
+    pub fn parseExpr(self: *Self) ASTError!EltRef {
         return try self.parseOr();
     }
 };
@@ -458,18 +487,18 @@ test "parseExpr" {
         defer alloc.deinit();
         const gpa = alloc.allocator();
 
-        const iter = toker.TokenIter.init(case.src);
+        const iter = TokenIter.init(case.src);
         var parser = try ASTParser.init(gpa, iter);
 
-        try testing.expectEqual(toker.Token{ .start = .{} }, parser.state.tok.?);
+        try testing.expectEqual(Token{ .start = .{} }, parser.state.tok.?);
         try parser.advance();
-        const node = try parser.parseExpr();
-        try testing.expectEqual(toker.Token{ .end = .{} }, parser.state.tok.?);
+        const elt = try parser.parseExpr();
+        try testing.expectEqual(Token{ .end = .{} }, parser.state.tok.?);
 
         var buf: std.ArrayListUnmanaged(u8) = .empty;
         var w = std.Io.Writer.Allocating.fromArrayList(gpa, &buf);
         defer w.deinit();
-        try w.writer.print("{f}", .{node});
+        try w.writer.print("{f}", .{elt});
         var output = w.toArrayList();
         defer output.deinit(gpa);
         // std.debug.print("{s}\n", .{output.items});
@@ -484,5 +513,10 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
 const toker = @import("./tokeniser.zig");
+const Token = toker.Token;
+const TokenIter = toker.TokenIter;
 const Keyword = toker.Keyword;
+const Location = toker.Location;
+
 const ASTNode = @import("./node.zig").ASTNode;
+const ASTElement = @import("./node.zig").ASTElement;
