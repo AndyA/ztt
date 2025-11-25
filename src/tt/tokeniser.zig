@@ -1,5 +1,9 @@
-fn isSymbol(chr: u8) bool {
+pub fn isSymbol(chr: u8) bool {
     return std.ascii.isAlphanumeric(chr) or chr == '_';
+}
+
+pub fn isBareword(chr: u8) bool {
+    return isSymbol(chr) or chr == '$' or chr == '.';
 }
 
 pub const TokerError = error{
@@ -104,6 +108,7 @@ pub const Token = union(enum) {
     start: ExprFrame,
     end: ExprFrame,
     symbol: []const u8,
+    // bareword: []const u8,
     int: i64,
     float: f64,
     sq_string: []const u8,
@@ -141,15 +146,11 @@ pub const TokenIter = struct {
         return Self{ .src = src };
     }
 
-    fn getLocation(self: *const Self) Location {
-        return .{
+    fn markTokenStart(self: *Self) void {
+        self.token_start = .{
             .line = self.line_number,
             .column = self.pos - self.line_start,
         };
-    }
-
-    fn markTokenStart(self: *Self) void {
-        self.token_start = self.getLocation();
     }
 
     pub fn getTokenStart(self: *const Self) Location {

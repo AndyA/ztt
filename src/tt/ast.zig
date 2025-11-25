@@ -29,6 +29,12 @@ const StringToken = union(enum) {
     interp: []const u8,
 };
 
+const SymbolToken = union(enum) {
+    name: []const u8,
+    index: i64,
+    keyword: Keyword,
+};
+
 const StringScanner = struct {
     const SS = @This();
     str: []const u8,
@@ -59,7 +65,7 @@ const StringScanner = struct {
         return self.str[self.pos .. self.pos + len];
     }
 
-    pub fn nextToken(self: *SS) ?StringToken {
+    pub fn nextStringToken(self: *SS) ?StringToken {
         if (self.eof()) return null;
         const nc = self.next();
         if (nc == '$') {
@@ -79,6 +85,28 @@ const StringScanner = struct {
             }
             return .{ .literal = self.str[start..self.pos] };
         }
+    }
+
+    pub fn nextSymbolToken(self: *SS) ?SymbolToken {
+        if (self.eof()) return null;
+        const start = self.pos;
+        const nc = self.next();
+        return switch (nc) {
+            '.' => .{ .keyword = .@"." },
+            '$' => .{ .keyword = .@"$" },
+            '0'...'9' => blk: {
+                while (!self.eof() and std.ascii.isDigit(self.peek()))
+                    _ = self.next();
+                const index = try std.fmt.parseInt(i64, self.str[start..self.pos]);
+                break :blk .{ .index = index };
+            },
+            'a'...'z', 'A'...'Z', '_' => blk: {
+                while (!self.eof() and toker.isSymbol(self.peek()))
+                    _ = self.next();
+                break :blk .{ .name = self.str[start..self.pos] };
+            },
+            else => unreachable,
+        };
     }
 };
 
@@ -223,6 +251,12 @@ pub const ASTParser = struct {
             }
         }
         return lhs;
+    }
+
+    fn parseSymbol(self: *Self) ASTError!EltRef {
+        const state = self.state;
+        const ss = StringScanner{ .str = state.tok.?.symbol };
+        _ = ss;
     }
 
     fn parseVar(self: *Self) ASTError!EltRef {
@@ -373,7 +407,7 @@ pub const ASTParser = struct {
         var node: ?EltRef = null;
         var ss = StringScanner{ .str = str };
 
-        while (ss.nextToken()) |tok| {
+        while (ss.nextStringToken()) |tok| {
             const rhs = switch (tok) {
                 .literal => |l| try self.parseDoubleQuotedLiteral(l),
                 .interp => |i| try self.parseInterpolation(i),
