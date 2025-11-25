@@ -17,6 +17,7 @@ pub const ASTParser = struct {
 
     gpa: Allocator,
     iter: toker.TokenIter,
+    location: toker.Location = .{},
     current: ?toker.Token = null,
     eof: bool = false,
 
@@ -28,7 +29,9 @@ pub const ASTParser = struct {
 
     fn advance(self: *Self) ASTError!void {
         if (self.eof) return error.UnexpectedEOF;
-        self.current = try self.iter.next();
+        const tok = self.iter.next();
+        self.location = self.iter.getTokenStart();
+        self.current = try tok;
         if (self.current == null) self.eof = true;
     }
 

@@ -111,8 +111,8 @@ pub const Token = union(enum) {
 };
 
 pub const Location = struct {
-    line: u32, // 1 based
-    column: u32, // 0 based
+    line: u32 = 1, // 1 based
+    column: u32 = 0, // 0 based
 };
 
 // TODO handle bareword parsing for INCLUDE / PROCESS
@@ -134,10 +134,7 @@ pub const TokenIter = struct {
         BLOCK_COMMENT,
     } = .TEXT,
 
-    token_start: Location = .{
-        .line = 1,
-        .column = 0,
-    },
+    token_start: Location = .{},
 
     pub fn init(src: []const u8) Self {
         return Self{ .src = src };
@@ -245,7 +242,10 @@ pub const TokenIter = struct {
     }
 
     pub fn next(self: *Self) TokerError!?Token {
-        if (self.eof()) return null;
+        if (self.eof()) {
+            self.markTokenStart();
+            return null;
+        }
         return parse: switch (self.state) {
             .TEXT => {
                 const start = self.pos;
