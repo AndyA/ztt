@@ -459,13 +459,13 @@ pub const ASTParser = struct {
         );
     }
 
-    pub fn parseExpr(self: *Self) ASTError!EltRef {
-        return try self.parseCond();
-    }
-
-    pub fn advanceAndParseExpr(self: *Self) ASTError!EltRef {
+    fn advanceAndParseExpr(self: *Self) ASTError!EltRef {
         try self.advance();
         return try self.parseExpr();
+    }
+
+    pub fn parseExpr(self: *Self) ASTError!EltRef {
+        return try self.parseCond();
     }
 };
 
