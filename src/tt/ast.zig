@@ -12,27 +12,41 @@ const ASTError = toker.TokerError || Allocator.Error || error{
 
 const NodeRef = *const ASTNode;
 
+const ParserState = struct {
+    tok: ?toker.Token = null,
+    loc: toker.Location = .{},
+
+    fn eof(self: *const ParserState) bool {
+        return self.tok == null;
+    }
+};
+
 pub const ASTParser = struct {
     const Self = @This();
 
     gpa: Allocator,
     iter: toker.TokenIter,
-    location: toker.Location = .{},
-    current: ?toker.Token = null,
-    eof: bool = false,
+    state: ParserState = .{},
 
     pub fn init(gpa: Allocator, iter: toker.TokenIter) ASTError!Self {
         var self = Self{ .gpa = gpa, .iter = iter };
-        try self.advance();
+        try self.nextState();
         return self;
     }
 
-    fn advance(self: *Self) ASTError!void {
-        if (self.eof) return error.UnexpectedEOF;
+    fn nextState(self: *Self) ASTError!void {
         const tok = self.iter.next();
-        self.location = self.iter.getTokenStart();
-        self.current = try tok;
-        if (self.current == null) self.eof = true;
+        self.state.loc = self.iter.getTokenStart();
+        self.state.tok = try tok;
+    }
+
+    fn eof(self: *const Self) bool {
+        return self.state.eof();
+    }
+
+    fn advance(self: *Self) ASTError!void {
+        assert(!self.eof());
+        try self.nextState();
     }
 
     fn newNode(self: *const Self, proto: ASTNode) Allocator.Error!*ASTNode {
@@ -40,8 +54,8 @@ pub const ASTParser = struct {
     }
 
     fn nextKeywordIs(self: *Self, want: Keyword) bool {
-        if (self.current) |current| {
-            return switch (current) {
+        if (self.state.tok) |tok| {
+            return switch (tok) {
                 .keyword => |kw| kw == want,
                 else => false,
             };
@@ -57,7 +71,7 @@ pub const ASTParser = struct {
     fn parseList(self: *Self, end: Keyword, require_commas: bool) ASTError![]NodeRef {
         var list: std.ArrayListUnmanaged(NodeRef) = .empty;
         while (true) {
-            if (self.eof)
+            if (self.eof())
                 return ASTError.MissingTerminal;
             if (self.nextKeywordIs(end)) {
                 try self.advance();
@@ -82,8 +96,8 @@ pub const ASTParser = struct {
 
     fn parseBinOp(self: *Self, allow: []const Keyword, parseNext: ParseFn) ASTError!NodeRef {
         var lhs = try parseNext(self);
-        while (!self.eof) {
-            switch (self.current.?) {
+        while (!self.eof()) {
+            switch (self.state.tok.?) {
                 .keyword => |op| {
                     if (allowed(allow, op)) {
                         try self.advance();
@@ -102,7 +116,7 @@ pub const ASTParser = struct {
     }
 
     fn parseVar(self: *Self) ASTError!NodeRef {
-        switch (self.current.?) {
+        switch (self.state.tok.?) {
             .keyword => |kw| {
                 if (kw == .@"$") {
                     try self.advance();
@@ -307,7 +321,7 @@ pub const ASTParser = struct {
     }
 
     fn parseAtom(self: *Self) ASTError!NodeRef {
-        switch (self.current.?) {
+        switch (self.state.tok.?) {
             .keyword => |kw| {
                 switch (kw) {
                     .@"-", .NOT => |op| {
@@ -447,10 +461,10 @@ test "parseExpr" {
         const iter = toker.TokenIter.init(case.src);
         var parser = try ASTParser.init(gpa, iter);
 
-        try testing.expectEqual(toker.Token{ .start = .{} }, parser.current.?);
+        try testing.expectEqual(toker.Token{ .start = .{} }, parser.state.tok.?);
         try parser.advance();
         const node = try parser.parseExpr();
-        try testing.expectEqual(toker.Token{ .end = .{} }, parser.current.?);
+        try testing.expectEqual(toker.Token{ .end = .{} }, parser.state.tok.?);
 
         var buf: std.ArrayListUnmanaged(u8) = .empty;
         var w = std.Io.Writer.Allocating.fromArrayList(gpa, &buf);
