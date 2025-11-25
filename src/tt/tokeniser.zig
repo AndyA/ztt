@@ -111,7 +111,6 @@ pub const Token = union(enum) {
 };
 
 pub const Location = struct {
-    name: []const u8,
     line: u32, // 1 based
     column: u32, // 0 based
 };
@@ -121,7 +120,6 @@ pub const Location = struct {
 pub const TokenIter = struct {
     const Self = @This();
 
-    name: []const u8,
     src: []const u8,
 
     pos: u32 = 0,
@@ -136,8 +134,8 @@ pub const TokenIter = struct {
         BLOCK_COMMENT,
     } = .TEXT,
 
-    pub fn init(name: []const u8, src: []const u8) Self {
-        return Self{ .name = name, .src = src };
+    pub fn init(src: []const u8) Self {
+        return Self{.src = src };
     }
 
     pub fn getLocation(self: *const Self) Location {
@@ -312,6 +310,7 @@ pub const TokenIter = struct {
                         break :parse .{ .keyword = if (sign == '+') .@"+" else .@"-" };
                     },
                     ';' => {
+                        // Desugar ';'' as '%]', '[%'
                         self.state = .SEMI;
                         break :parse .{ .end = .{} };
                     },
@@ -538,68 +537,7 @@ test TokenIter {
     };
 
     for (cases) |case| {
-        var iter = TokenIter.init("test", case.src);
-        var tokens: std.ArrayList(T) = .empty;
-        defer tokens.deinit(gpa);
-        while (try iter.next()) |t| {
-            try tokens.append(gpa, t);
-        }
-        const got = try tokens.toOwnedSlice(gpa);
-        defer gpa.free(got);
-        try testing.expectEqualDeep(case.want, got);
-    }
-}
-
-pub const LocationToken = struct {
-    tok: Token,
-    loc: Location,
-};
-
-pub const LocationTokenIter = struct {
-    const Self = @This();
-
-    iter: TokenIter,
-
-    pub fn init(name: []const u8, src: []const u8) Self {
-        return Self{ .iter = TokenIter.init(name, src) };
-    }
-
-    pub fn next(self: *Self) TokerError!?LocationToken {
-        const loc = self.iter.getLocation();
-        const tok = try self.iter.next();
-        if (tok) |t|
-            return LocationToken{ .tok = t, .loc = loc };
-        return null;
-    }
-};
-
-test LocationTokenIter {
-    const gpa = testing.allocator;
-    const T = LocationToken;
-    const cases = &[_]struct { src: []const u8, want: []const T }{
-        .{ .src = "", .want = &[_]T{} },
-        .{ .src = "hello [% %] world", .want = &[_]T{
-            .{
-                .tok = .{ .literal = "hello " },
-                .loc = .{ .name = "test", .line = 1, .column = 0 },
-            },
-            .{
-                .tok = .{ .start = .{} },
-                .loc = .{ .name = "test", .line = 1, .column = 8 },
-            },
-            .{
-                .tok = .{ .end = .{} },
-                .loc = .{ .name = "test", .line = 1, .column = 8 },
-            },
-            .{
-                .tok = .{ .literal = " world" },
-                .loc = .{ .name = "test", .line = 1, .column = 11 },
-            },
-        } },
-    };
-
-    for (cases) |case| {
-        var iter = LocationTokenIter.init("test", case.src);
+        var iter = TokenIter.init(case.src);
         var tokens: std.ArrayList(T) = .empty;
         defer tokens.deinit(gpa);
         while (try iter.next()) |t| {

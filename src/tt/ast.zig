@@ -16,11 +16,11 @@ pub const ASTParser = struct {
     const Self = @This();
 
     gpa: Allocator,
-    iter: toker.LocationTokenIter,
-    current: ?toker.LocationToken = null,
+    iter: toker.TokenIter,
+    current: ?toker.Token = null,
     eof: bool = false,
 
-    pub fn init(gpa: Allocator, iter: toker.LocationTokenIter) ASTError!Self {
+    pub fn init(gpa: Allocator, iter: toker.TokenIter) ASTError!Self {
         var self = Self{ .gpa = gpa, .iter = iter };
         try self.advance();
         return self;
@@ -38,7 +38,7 @@ pub const ASTParser = struct {
 
     fn nextKeywordIs(self: *Self, want: Keyword) bool {
         if (self.current) |current| {
-            return switch (current.tok) {
+            return switch (current) {
                 .keyword => |kw| kw == want,
                 else => false,
             };
@@ -80,7 +80,7 @@ pub const ASTParser = struct {
     fn parseBinOp(self: *Self, allow: []const Keyword, parseNext: ParseFn) ASTError!NodeRef {
         var lhs = try parseNext(self);
         while (!self.eof) {
-            switch (self.current.?.tok) {
+            switch (self.current.?) {
                 .keyword => |op| {
                     if (allowed(allow, op)) {
                         try self.advance();
@@ -99,7 +99,7 @@ pub const ASTParser = struct {
     }
 
     fn parseVar(self: *Self) ASTError!NodeRef {
-        switch (self.current.?.tok) {
+        switch (self.current.?) {
             .keyword => |kw| {
                 if (kw == .@"$") {
                     try self.advance();
@@ -304,7 +304,7 @@ pub const ASTParser = struct {
     }
 
     fn parseAtom(self: *Self) ASTError!NodeRef {
-        switch (self.current.?.tok) {
+        switch (self.current.?) {
             .keyword => |kw| {
                 switch (kw) {
                     .@"-", .NOT => |op| {
@@ -441,13 +441,13 @@ test "parseExpr" {
         defer alloc.deinit();
         const gpa = alloc.allocator();
 
-        const iter = toker.LocationTokenIter.init("test", case.src);
+        const iter = toker.TokenIter.init(case.src);
         var parser = try ASTParser.init(gpa, iter);
 
-        try testing.expectEqual(toker.Token{ .start = .{} }, parser.current.?.tok);
+        try testing.expectEqual(toker.Token{ .start = .{} }, parser.current.?);
         try parser.advance();
         const node = try parser.parseExpr();
-        try testing.expectEqual(toker.Token{ .end = .{} }, parser.current.?.tok);
+        try testing.expectEqual(toker.Token{ .end = .{} }, parser.current.?);
 
         var buf: std.ArrayListUnmanaged(u8) = .empty;
         var w = std.Io.Writer.Allocating.fromArrayList(gpa, &buf);
