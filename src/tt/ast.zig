@@ -357,8 +357,7 @@ pub const ASTParser = struct {
                         );
                     },
                     .@"(" => {
-                        try self.advance();
-                        const res = try self.parseExpr();
+                        const res = try self.advanceAndParseExpr();
                         // TODO assign_stmt -> assign_expr
                         if (!self.nextKeywordIs(.@")"))
                             return ASTError.MissingParen;
@@ -401,8 +400,7 @@ pub const ASTParser = struct {
         const lvalue = try self.parseAtom();
         const state = self.state;
         if (self.nextKeywordIs(.@"=")) {
-            try self.advance();
-            const rvalue = try self.parseExpr();
+            const rvalue = try self.advanceAndParseExpr();
             return self.newNode(
                 .{ .assign_stmt = .{ .lvalue = lvalue, .rvalue = rvalue } },
                 state.loc,
@@ -442,18 +440,18 @@ pub const ASTParser = struct {
 
     fn parseCond(self: *Self) ASTError!EltRef {
         const cond = try self.parseOr();
+
         if (!self.nextKeywordIs(.@"?"))
             return cond;
+
         const state = self.state;
 
-        try self.advance();
-        const THEN = try self.parseExpr();
+        const THEN = try self.advanceAndParseExpr();
 
         if (!self.nextKeywordIs(.@":"))
             return ASTError.MissingColon;
 
-        try self.advance();
-        const ELSE = try self.parseExpr();
+        const ELSE = try self.advanceAndParseExpr();
 
         return self.newNode(
             .{ .if_op = .{ .cond = cond, .THEN = THEN, .ELSE = ELSE } },
@@ -463,6 +461,11 @@ pub const ASTParser = struct {
 
     pub fn parseExpr(self: *Self) ASTError!EltRef {
         return try self.parseCond();
+    }
+
+    pub fn advanceAndParseExpr(self: *Self) ASTError!EltRef {
+        try self.advance();
+        return try self.parseExpr();
     }
 };
 
