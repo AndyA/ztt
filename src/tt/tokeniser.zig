@@ -134,16 +134,28 @@ pub const TokenIter = struct {
         BLOCK_COMMENT,
     } = .TEXT,
 
+    token_start: Location = .{
+        .line = 1,
+        .column = 0,
+    },
+
     pub fn init(src: []const u8) Self {
-        return Self{.src = src };
+        return Self{ .src = src };
     }
 
-    pub fn getLocation(self: *const Self) Location {
+    fn getLocation(self: *const Self) Location {
         return .{
-            .name = self.name,
             .line = self.line_number,
             .column = self.pos - self.line_start,
         };
+    }
+
+    fn markTokenStart(self: *Self) void {
+        self.token_start = self.getLocation();
+    }
+
+    pub fn getTokenStart(self: *const Self) Location {
+        return self.token_start;
     }
 
     fn eof(self: *const Self) bool {
@@ -164,11 +176,14 @@ pub const TokenIter = struct {
         return self.src[self.pos .. self.pos + len];
     }
 
+    fn peekNext(self: *Self, comptime want: []const u8) bool {
+        return self.available() >= want.len and
+            std.mem.eql(u8, want, self.slice(want.len));
+    }
+
     fn isNext(self: *Self, comptime want: []const u8) bool {
-        if (self.available() < want.len)
-            return false;
-        if (std.mem.eql(u8, want, self.slice(want.len))) {
-            self.pos += want.len; // assumes no newlines in want
+        if (peekNext(self, want)) {
+            self.pos += want.len;
             return true;
         }
         return false;
@@ -234,24 +249,27 @@ pub const TokenIter = struct {
         return parse: switch (self.state) {
             .TEXT => {
                 const start = self.pos;
+                self.markTokenStart();
 
                 assert(!self.eof());
 
-                const text = text: while (!self.eof()) {
-                    const nc = self.advance();
-                    if (nc == '[' and !self.eof() and self.advance() == '%') {
+                while (!self.eof()) {
+                    if (self.peekNext("[%")) {
                         self.state = .START;
-                        break :text self.src[start .. self.pos - 2];
+                        break;
                     }
-                } else {
-                    break :text self.src[start..self.pos];
-                };
+                    _ = self.advance();
+                }
 
+                const text = self.src[start..self.pos];
                 if (text.len == 0) continue :parse self.state;
                 break :parse .{ .literal = text };
             },
             .START => {
                 self.state = .EXPR;
+                self.markTokenStart();
+                assert(self.available() >= 2);
+                self.pos += 2;
                 if (!self.eof()) {
                     const nc = self.peek();
                     if (nc == '-' or nc == '+') {
@@ -266,6 +284,7 @@ pub const TokenIter = struct {
             },
             .EXPR => {
                 self.skipSpace();
+                self.markTokenStart();
                 if (self.eof()) break :parse error.UnexpectedEOF;
 
                 const start = self.pos;
