@@ -26,7 +26,7 @@ FOR a IN ["c", "b", "a"] STEP -1; a; END
 
 Parsing foo.0.0 as <symbol>.<int>.<int>
 
-Maybe parse the whole symbol (including dots, indexes, refs) in the toker and split in the parser?
+Maybe parse the whole symbol (including dots, indexes, refs) in the toker and split in the parser? That might help with bareword parsing too - maybe a symbol can include '/' too?
 
 ## Other languages to experiment with
 
