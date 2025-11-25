@@ -2,7 +2,12 @@ const EltRef = *const ASTElement;
 
 pub const ASTNode = union(enum) {
     const Node = @This();
-    const Assign = struct { lvalue: EltRef, rvalue: EltRef };
+
+    const Assign = struct {
+        lvalue: EltRef,
+        rvalue: EltRef,
+    };
+
     const Cond = struct {
         cond: EltRef, // expr
         THEN: EltRef, // block

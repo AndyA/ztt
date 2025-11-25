@@ -107,7 +107,8 @@ pub const ASTParser = struct {
     }
 
     fn advance(self: *Self) ASTError!void {
-        assert(!self.eof());
+        if (self.eof())
+            return ASTError.UnexpectedEOF;
         try self.nextState();
     }
 
@@ -162,7 +163,7 @@ pub const ASTParser = struct {
 
         while (true) {
             if (self.eof())
-                return ASTError.MissingTerminal;
+                return ASTError.MissingBrace;
             if (self.nextKeywordIs(.@"}")) {
                 try self.advance();
                 break;
@@ -567,6 +568,11 @@ test "parseExpr" {
         .{ .src = "[% {a => 1, b = 2} %]", .want = "{a => 1, b => 2}" },
         .{ .src = "[% {a = 1 b = 2} %]", .want = "{a => 1, b => 2}" },
         .{ .src = "[% {(a = 1) = 2} %]", .want = "{(a = 1) => 2}" },
+        .{ .src = "[% header(title='Hello World') %]", .want = "header(title = \"Hello World\")" },
+        .{
+            .src = "[% header(title=\"Hello $name\") %]",
+            .want = "header(title = (\"Hello \" _ name))",
+        },
     };
 
     for (cases) |case| {
