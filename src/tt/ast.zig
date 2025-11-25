@@ -245,8 +245,8 @@ pub const ASTParser = struct {
     }
 
     fn parseCall(self: *Self) ASTError!EltRef {
-        const state = self.state;
         var call = try self.parseVar();
+        const state = self.state;
         while (self.nextKeywordIs(.@"(")) {
             try self.advance();
             const args = try self.parseList(.@")", true);
