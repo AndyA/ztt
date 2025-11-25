@@ -7,8 +7,6 @@
 
 ## Syntax
 
-- desugar `;` to `%][%`?
-
 ```
 # Over list
 FOR a IN [1, 2, 3]; a; END
@@ -23,6 +21,12 @@ FOR a IN list STEP 3; a; END
 # Step backwards through list
 FOR a IN ["c", "b", "a"] STEP -1; a; END
 ```
+
+## Problems
+
+Parsing foo.0.0 as <symbol>.<int>.<int>
+
+Maybe parse the whole symbol (including dots, indexes, refs) in the toker and split in the parser?
 
 ## Other languages to experiment with
 

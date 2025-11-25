@@ -6,7 +6,7 @@ pub const TokerError = error{
     MissingQuote,
     UnexpectedEOF,
     SyntaxError,
-} || std.fmt.ParseFloatError;
+} || std.fmt.ParseFloatError || std.fmt.ParseIntError;
 
 pub const Keyword = enum {
     pub fn normalise(kw: Keyword) Keyword {
@@ -104,7 +104,8 @@ pub const Token = union(enum) {
     start: ExprFrame,
     end: ExprFrame,
     symbol: []const u8,
-    number: f64,
+    int: i64,
+    float: f64,
     sq_string: []const u8,
     dq_string: []const u8,
     keyword: Keyword,
@@ -218,8 +219,7 @@ pub const TokenIter = struct {
         if (start == self.pos) return error.SyntaxError;
     }
 
-    fn wantNumber(self: *Self) TokerError!void {
-        self.skipDigits();
+    fn wantFloat(self: *Self) TokerError!void {
         if (self.isNext("."))
             try self.wantDigits();
         if (!self.eof()) {
@@ -299,9 +299,17 @@ pub const TokenIter = struct {
                             .{ .symbol = sym };
                     },
                     '0'...'9' => {
-                        try self.wantNumber();
-                        const number = try std.fmt.parseFloat(f64, self.src[start..self.pos]);
-                        break :parse .{ .number = number };
+                        self.skipDigits();
+                        if (!self.eof()) {
+                            const nc = self.peek();
+                            if (nc == '.' or nc == 'e' or nc == 'E') {
+                                try self.wantFloat();
+                                const float = try std.fmt.parseFloat(f64, self.src[start..self.pos]);
+                                break :parse .{ .float = float };
+                            }
+                        }
+                        const int = try std.fmt.parseInt(i64, self.src[start..self.pos], 10);
+                        break :parse .{ .int = int };
                     },
                     '"', '\'' => |quote| {
                         while (!self.eof()) {
@@ -496,11 +504,11 @@ test TokenIter {
         } },
         .{ .src = "[% 1 -1 1e3 1.0 %]", .want = &[_]T{
             .{ .start = .{} },
-            .{ .number = 1 },
+            .{ .int = 1 },
             .{ .keyword = .@"-" },
-            .{ .number = 1 },
-            .{ .number = 1e3 },
-            .{ .number = 1.0 },
+            .{ .int = 1 },
+            .{ .float = 1e3 },
+            .{ .float = 1.0 },
             .{ .end = .{} },
         } },
         .{

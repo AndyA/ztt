@@ -240,6 +240,10 @@ pub const ASTParser = struct {
                 try self.advance();
                 return try self.newNode(.{ .symbol = sym }, state.loc);
             },
+            .int => |int| {
+                try self.advance();
+                return try self.newNode(.{ .int = int }, state.loc);
+            },
             else => return ASTError.SyntaxError,
         }
     }
@@ -431,8 +435,13 @@ pub const ASTParser = struct {
                     else => return ASTError.SyntaxError,
                 }
             },
-            .number => |n| {
-                const node = try self.newNode(.{ .number = n }, state.loc);
+            .int => |n| {
+                const node = try self.newNode(.{ .int = n }, state.loc);
+                try self.advance();
+                return node;
+            },
+            .float => |n| {
+                const node = try self.newNode(.{ .float = n }, state.loc);
                 try self.advance();
                 return node;
             },
@@ -531,6 +540,8 @@ test "parseExpr" {
         .{ .src = "[% 1 + 3 * 2 %]", .want = "(1 + (3 * 2))" },
         .{ .src = "[% (1 + 3) * 2 %]", .want = "((1 + 3) * 2)" },
         .{ .src = "[% foo %]", .want = "foo" },
+        .{ .src = "[% foo.0 %]", .want = "foo.0" },
+        // .{ .src = "[% foo.0.1 %]", .want = "foo.0.1" },
         .{ .src = "[% $$foo %]", .want = "$$foo" },
         .{ .src = "[% foo.bar %]", .want = "foo.bar" },
         .{ .src = "[% $foo.bar %]", .want = "$foo.bar" },

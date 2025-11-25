@@ -16,7 +16,8 @@ pub const ASTNode = union(enum) {
 
     literal: []const u8,
     string: []const u8,
-    number: f64,
+    float: f64,
+    int: i64,
     array: []EltRef,
     object: struct {
         keys: []EltRef,
@@ -75,7 +76,7 @@ pub const ASTNode = union(enum) {
 
     pub fn format(self: Node, w: *Io.Writer) Io.Writer.Error!void {
         switch (self) {
-            .number => |n| try w.print("{d}", .{n}),
+            inline .float, .int => |n| try w.print("{d}", .{n}),
             .symbol => |s| try w.print("{s}", .{s}),
             .ref => |r| try w.print("${f}", .{r}),
             .unary_op => |o| switch (o.op) {
