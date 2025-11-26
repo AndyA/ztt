@@ -1,5 +1,3 @@
-const State = enum { LITERAL, BLOCK };
-
 fn swallowStart(str: []const u8) []const u8 {
     var pos: usize = 0;
     while (pos < str.len and std.ascii.isWhitespace(str[pos]))
@@ -29,8 +27,10 @@ fn isSwallow(p: *const ASTParser) bool {
     };
 }
 
-pub fn parseBlock(p: *ASTParser) Error!EltRef {
-    return try expr.parseExpr(p);
+fn parseStatement(p: *ASTParser) Error!EltRef {
+    return switch (p.state.tok.?) {
+        else => try expr.parseExpr(p),
+    };
 }
 
 pub fn parseTemplate(p: *ASTParser) Error!EltRef {
@@ -52,7 +52,7 @@ pub fn parseTemplate(p: *ASTParser) Error!EltRef {
             },
             .start => {
                 try p.advance();
-                const node = try parseBlock(p);
+                const node = try parseStatement(p);
                 if (p.eof() or p.state.tok.? != .end)
                     return Error.SyntaxError;
                 swallow_start = isSwallow(p);
