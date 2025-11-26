@@ -16,9 +16,6 @@ fn parseList(p: *ASTParser, end: Keyword, require_commas: bool) Error![]EltRef {
 
         if (p.nextKeywordIs(.@",")) {
             try p.advance();
-        } else if (p.nextKeywordIs(end)) {
-            try p.advance();
-            break;
         } else if (require_commas) {
             return Error.MissingComma;
         }
