@@ -11,6 +11,12 @@ pub const Keyword = enum {
         };
     }
 
+    pub fn lookup(op: []const u8) ?Keyword {
+        if (std.meta.stringToEnum(Keyword, op)) |kw|
+            return kw.normalise();
+        return null;
+    }
+
     @"!",
     @"!=",
     @"$",

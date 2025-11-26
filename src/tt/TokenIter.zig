@@ -110,12 +110,6 @@ fn wantFloat(self: *TI) TokerError!void {
     }
 }
 
-fn keywordLookup(op: []const u8) ?Keyword {
-    if (std.meta.stringToEnum(Keyword, op)) |kw|
-        return kw.normalise();
-    return null;
-}
-
 pub fn next(self: *TI) TokerError!?Token {
     if (self.eof()) {
         self.markTokenStart();
@@ -168,7 +162,7 @@ pub fn next(self: *TI) TokerError!?Token {
                     while (!self.eof() and ctype.isSymbol(self.peek()))
                         _ = self.advance();
                     const sym = self.src[start..self.pos];
-                    break :parse if (keywordLookup(sym)) |op|
+                    break :parse if (Keyword.lookup(sym)) |op|
                         .{ .keyword = op }
                     else
                         .{ .symbol = sym };
@@ -233,7 +227,7 @@ pub fn next(self: *TI) TokerError!?Token {
                         switch (self.peek()) {
                             '>', '=', '&', '|' => {
                                 const op = self.src[self.pos - 1 .. self.pos + 1];
-                                if (keywordLookup(op)) |kw| {
+                                if (Keyword.lookup(op)) |kw| {
                                     _ = self.advance();
                                     break :parse .{ .keyword = kw };
                                 }
@@ -246,7 +240,7 @@ pub fn next(self: *TI) TokerError!?Token {
             }
             // Last resort: look for a single character keyword
             const op = self.src[self.pos - 1 .. self.pos];
-            if (keywordLookup(op)) |kw|
+            if (Keyword.lookup(op)) |kw|
                 break :parse .{ .keyword = kw };
             break :parse error.SyntaxError;
         },
