@@ -10,7 +10,6 @@ state: enum {
     START,
     EXPR,
     SYMBOL,
-    DQ_STRING,
     SEMI,
     COMMENT,
     BLOCK_COMMENT,
@@ -278,7 +277,6 @@ pub fn next(self: *TI) TokerError!?Token {
                 },
             }
         },
-        .DQ_STRING => unreachable,
         .SEMI => {
             self.state = .EXPR;
             break :parse .{ .start = .{} };
