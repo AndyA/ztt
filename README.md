@@ -3,6 +3,8 @@
 ## TODO
 
 - how to handle barewords (PROCESS / INCUDE / INSERT)
+- make the toker parse string escapes
+- make the toker desugar double quoted strings
 
 ## Syntax
 
@@ -20,16 +22,6 @@ FOR a IN list STEP 3; a; END
 # Step backwards through list
 FOR a IN ["c", "b", "a"] STEP -1; a; END
 ```
-
-## Problems
-
-Parsing foo.0.0 as <symbol>.<int>.<int>
-
-Maybe parse the whole symbol (including dots, indexes, refs) in the toker and split in the parser? That might help with bareword parsing too - maybe a symbol can include '/' too?
-
-### Plan
-
-Make the toker aware of paths and the contents of double quotes strings - new toker states.
 
 ## Other languages to experiment with
 

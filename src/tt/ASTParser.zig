@@ -162,12 +162,6 @@ fn parseBinOp(self: *Self, allow: []const Keyword, parseNext: ParseFn) Error!Elt
     return lhs;
 }
 
-fn parseSymbol(self: *Self) Error!EltRef {
-    const state = self.state;
-    const ss = StringScanner{ .str = state.tok.?.symbol };
-    _ = ss;
-}
-
 fn parseVar(self: *Self) Error!EltRef {
     const state = self.state;
     switch (state.tok.?) {

@@ -38,28 +38,6 @@ pub fn take(self: *SS, len: usize) []const u8 {
     return self.str[self.pos .. self.pos + len];
 }
 
-pub fn nextSymbolToken(self: *SS) ?SymbolToken {
-    if (self.eof()) return null;
-    const start = self.pos;
-    const nc = self.next();
-    return switch (nc) {
-        '.' => .{ .keyword = .@"." },
-        '$' => .{ .keyword = .@"$" },
-        '0'...'9' => blk: {
-            while (!self.eof() and std.ascii.isDigit(self.peek()))
-                _ = self.next();
-            const index = try std.fmt.parseInt(i64, self.str[start..self.pos]);
-            break :blk .{ .index = index };
-        },
-        'a'...'z', 'A'...'Z', '_' => blk: {
-            while (!self.eof() and ctype.isSymbol(self.peek()))
-                _ = self.next();
-            break :blk .{ .name = self.str[start..self.pos] };
-        },
-        else => unreachable,
-    };
-}
-
 const std = @import("std");
 const assert = std.debug.assert;
 const testing = std.testing;
