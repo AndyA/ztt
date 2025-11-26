@@ -40,6 +40,8 @@ fn parseObject(p: *ASTParser) Error!EltRef {
         const key = try parseExpr(p);
         switch (key.*.node) {
             .assign_stmt => |a| {
+                // Assignment will already have been parsed so we need
+                // to unpack it.
                 try keys.append(p.gpa, a.lvalue);
                 try values.append(p.gpa, a.rvalue);
             },
@@ -73,12 +75,12 @@ fn parseObject(p: *ASTParser) Error!EltRef {
     );
 }
 
-fn allowed(allow: []const Keyword, kw: Keyword) bool {
-    for (allow) |k| if (k == kw) return true;
+fn allowed(comptime allow: []const Keyword, kw: Keyword) bool {
+    inline for (allow) |k| if (k == kw) return true;
     return false;
 }
 
-fn parseBinOp(p: *ASTParser, allow: []const Keyword, parseNext: ParseFn) Error!EltRef {
+fn parseBinOp(p: *ASTParser, comptime allow: []const Keyword, parseNext: ParseFn) Error!EltRef {
     var lhs = try parseNext(p);
     while (!p.eof()) {
         const state = p.state;
