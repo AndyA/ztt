@@ -75,18 +75,21 @@ fn advance(self: *TI) u8 {
     return nc;
 }
 
-fn skipSpace(self: *TI) void {
-    while (!self.eof()) {
-        if (!std.ascii.isWhitespace(self.peek())) break;
+fn skipPredicate(self: *TI, comptime pred: fn (u8) bool) void {
+    while (!self.eof() and pred(self.peek()))
         _ = self.advance();
-    }
+}
+
+fn skipSpace(self: *TI) void {
+    self.skipPredicate(std.ascii.isWhitespace);
 }
 
 fn skipDigits(self: *TI) void {
-    while (!self.eof()) {
-        if (!std.ascii.isDigit(self.peek())) break;
-        _ = self.advance();
-    }
+    self.skipPredicate(std.ascii.isDigit);
+}
+
+fn skipSymbol(self: *TI) void {
+    self.skipPredicate(ctype.isSymbol);
 }
 
 fn wantDigits(self: *TI) TokerError!void {
@@ -160,8 +163,7 @@ pub fn next(self: *TI) TokerError!?Token {
             const start = self.pos;
             switch (self.advance()) {
                 'a'...'z', 'A'...'Z', '_' => {
-                    while (!self.eof() and ctype.isSymbol(self.peek()))
-                        _ = self.advance();
+                    self.skipSymbol();
                     const sym = self.src[start..self.pos];
                     if (Keyword.lookup(sym)) |op| {
                         break :parse .{ .keyword = op };
@@ -256,13 +258,8 @@ pub fn next(self: *TI) TokerError!?Token {
                     _ = self.advance();
                     break :parse .{ .keyword = .@"." };
                 },
-                '$' => {
-                    _ = self.advance();
-                    break :parse .{ .keyword = .@"$" };
-                },
                 'a'...'z', 'A'...'Z', '_' => {
-                    while (!self.eof() and ctype.isSymbol(self.peek()))
-                        _ = self.advance();
+                    self.skipSymbol();
                     const sym = self.src[start..self.pos];
                     break :parse .{ .symbol = sym };
                 },
