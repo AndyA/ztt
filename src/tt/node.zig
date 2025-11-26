@@ -1,5 +1,6 @@
 pub const ASTNode = union(enum) {
-    const Node = @This();
+    const Self = @This();
+    const Keyword = types.Keyword;
     const EltRef = *const ASTElement;
 
     const Assign = struct {
@@ -73,7 +74,7 @@ pub const ASTNode = union(enum) {
         }
     }
 
-    pub fn format(self: Node, w: *Io.Writer) Io.Writer.Error!void {
+    pub fn format(self: Self, w: *Io.Writer) Io.Writer.Error!void {
         switch (self) {
             inline .float, .int => |n| try w.print("{d}", .{n}),
             .symbol => |s| try w.print("{s}", .{s}),
@@ -121,16 +122,12 @@ pub const ASTNode = union(enum) {
             else => unreachable,
         }
     }
-
-    pub fn create(gpa: Allocator, node: Node) Allocator.Error!*Node {
-        const self = try gpa.create(ASTNode);
-        self.* = node;
-        return self;
-    }
 };
 
 pub const ASTElement = struct {
     const Self = @This();
+    const Location = types.Location;
+
     node: ASTNode,
     loc: Location,
 
@@ -151,5 +148,3 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
 const types = @import("./types.zig");
-const Keyword = types.Keyword;
-const Location = types.Location;

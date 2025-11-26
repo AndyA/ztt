@@ -18,5 +18,5 @@ const assert = std.debug.assert;
 
 test {
     _ = @import("./tt/TokenIter.zig");
-    _ = @import("./tt/ast.zig");
+    _ = @import("./tt/ASTParser.zig");
 }

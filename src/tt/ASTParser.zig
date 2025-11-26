@@ -1,0 +1,568 @@
+const Self = @This();
+const Keyword = types.Keyword;
+const EltRef = *const ASTElement;
+const ParseFn = fn (*Self) Error!EltRef;
+
+const Error = types.TokerError || Allocator.Error || error{
+    Overflow,
+    MissingParen,
+    MissingTerminal,
+    MissingComma,
+    MissingColon,
+    MissingBrace,
+    MissingFatArrow,
+    BadString,
+};
+
+const ParserState = struct {
+    tok: ?types.Token = null,
+    loc: types.Location = .{},
+
+    fn eof(self: *const ParserState) bool {
+        return self.tok == null;
+    }
+};
+
+gpa: Allocator,
+iter: TokenIter,
+state: ParserState = .{},
+
+pub fn init(gpa: Allocator, iter: TokenIter) Error!Self {
+    var self = Self{ .gpa = gpa, .iter = iter };
+    try self.nextState();
+    return self;
+}
+
+fn nextState(self: *Self) Error!void {
+    const tok = self.iter.next();
+    self.state.loc = self.iter.getTokenStart();
+    self.state.tok = try tok;
+}
+
+fn eof(self: *const Self) bool {
+    return self.state.eof();
+}
+
+fn advance(self: *Self) Error!void {
+    if (self.eof())
+        return Error.UnexpectedEOF;
+    try self.nextState();
+}
+
+fn newNode(self: *const Self, node: ASTNode, loc: types.Location) Allocator.Error!*ASTElement {
+    return try ASTElement.create(self.gpa, node, loc);
+}
+
+fn nextKeywordIs(self: *Self, want: Keyword) bool {
+    if (self.state.tok) |tok| {
+        return switch (tok) {
+            .keyword => |kw| kw == want,
+            else => false,
+        };
+    }
+    return false;
+}
+
+fn allowed(allow: []const Keyword, kw: Keyword) bool {
+    for (allow) |k| if (k == kw) return true;
+    return false;
+}
+
+fn parseList(self: *Self, end: Keyword, require_commas: bool) Error![]EltRef {
+    var list: std.ArrayListUnmanaged(EltRef) = .empty;
+    while (true) {
+        if (self.eof())
+            return Error.MissingTerminal;
+        if (self.nextKeywordIs(end)) {
+            try self.advance();
+            break;
+        }
+        const item = try self.parseExpr();
+        try list.append(self.gpa, item);
+
+        if (self.nextKeywordIs(.@",")) {
+            try self.advance();
+        } else if (self.nextKeywordIs(end)) {
+            try self.advance();
+            break;
+        } else if (require_commas) {
+            return Error.MissingComma;
+        }
+    }
+    return list.items;
+}
+
+fn parseObject(self: *Self) Error!EltRef {
+    var keys: std.ArrayListUnmanaged(EltRef) = .empty;
+    var values: std.ArrayListUnmanaged(EltRef) = .empty;
+    const state = self.state;
+    try self.advance();
+
+    while (true) {
+        if (self.eof())
+            return Error.MissingBrace;
+        if (self.nextKeywordIs(.@"}")) {
+            try self.advance();
+            break;
+        }
+
+        const key = try self.parseExpr();
+        switch (key.*.node) {
+            .assign_stmt => |a| {
+                try keys.append(self.gpa, a.lvalue);
+                try values.append(self.gpa, a.rvalue);
+            },
+            else => {
+                try keys.append(self.gpa, key);
+
+                if (!self.nextKeywordIs(.@"=>"))
+                    return Error.MissingFatArrow;
+                try self.advance();
+
+                try values.append(self.gpa, try self.parseExpr());
+            },
+        }
+
+        if (self.nextKeywordIs(.@",")) {
+            try self.advance();
+        } else if (self.nextKeywordIs(.@"}")) {
+            try self.advance();
+            break;
+        }
+    }
+
+    assert(keys.items.len == values.items.len);
+
+    return try self.newNode(
+        .{ .object = .{ .keys = keys.items, .values = values.items } },
+        state.loc,
+    );
+}
+
+fn parseBinOp(self: *Self, allow: []const Keyword, parseNext: ParseFn) Error!EltRef {
+    var lhs = try parseNext(self);
+    while (!self.eof()) {
+        const state = self.state;
+        switch (state.tok.?) {
+            .keyword => |op| {
+                if (allowed(allow, op)) {
+                    try self.advance();
+                    const rhs = try parseNext(self);
+                    lhs = try self.newNode(
+                        .{ .binary_op = .{ .op = op, .lhs = lhs, .rhs = rhs } },
+                        state.loc,
+                    );
+                } else {
+                    break;
+                }
+            },
+            else => break,
+        }
+    }
+    return lhs;
+}
+
+fn parseSymbol(self: *Self) Error!EltRef {
+    const state = self.state;
+    const ss = StringScanner{ .str = state.tok.?.symbol };
+    _ = ss;
+}
+
+fn parseVar(self: *Self) Error!EltRef {
+    const state = self.state;
+    switch (state.tok.?) {
+        .keyword => |kw| {
+            if (kw == .@"$") {
+                try self.advance();
+                const ref = try self.parseVar();
+                return try self.newNode(.{ .ref = ref }, state.loc);
+            }
+            return Error.SyntaxError;
+        },
+        .symbol => |sym| {
+            try self.advance();
+            return try self.newNode(.{ .symbol = sym }, state.loc);
+        },
+        .int => |int| {
+            try self.advance();
+            return try self.newNode(.{ .int = int }, state.loc);
+        },
+        else => return Error.SyntaxError,
+    }
+}
+
+fn parseCall(self: *Self) Error!EltRef {
+    var call = try self.parseVar();
+    const state = self.state;
+    while (self.nextKeywordIs(.@"(")) {
+        try self.advance();
+        const args = try self.parseList(.@")", true);
+        call = try self.newNode(
+            .{ .call = .{ .method = call, .args = args } },
+            state.loc,
+        );
+    }
+    return call;
+}
+
+fn parseRef(self: *Self) Error!EltRef {
+    return self.parseBinOp(&.{.@"."}, parseCall);
+}
+
+fn parenthesise(self: *const Self, elt: EltRef) Error!EltRef {
+    return switch (elt.*.node) {
+        .assign_stmt => |a| try self.newNode(
+            .{ .assign_expr = .{ .lvalue = a.lvalue, .rvalue = a.rvalue } },
+            elt.loc,
+        ),
+        else => elt,
+    };
+}
+
+fn parseSingleQuotedString(self: *Self, str: []const u8) Error!EltRef {
+    const state = self.state;
+    try self.advance();
+
+    var ss = StringScanner{ .str = str };
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(self.gpa);
+
+    while (!ss.eof()) {
+        const nc = ss.next();
+        if (nc == '\\' and !ss.eof()) {
+            const qc = ss.next();
+            if (qc != '\\' and qc != '\'')
+                try buf.append(self.gpa, nc);
+            try buf.append(self.gpa, qc);
+        } else {
+            try buf.append(self.gpa, nc);
+        }
+    }
+
+    return self.newNode(
+        .{ .string = try buf.toOwnedSlice(self.gpa) },
+        state.loc,
+    );
+}
+
+fn parseDoubleQuotedLiteral(self: *Self, literal: []const u8) Error!EltRef {
+    const state = self.state;
+    var ss = StringScanner{ .str = literal };
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    defer buf.deinit(self.gpa);
+
+    while (!ss.eof()) {
+        const nc = ss.next();
+        if (nc == '\\' and !ss.eof()) {
+            const qc = ss.next();
+            switch (qc) {
+                '$', '\\', '\"' => try buf.append(self.gpa, qc),
+                'a' => try buf.append(self.gpa, 0x07),
+                'b' => try buf.append(self.gpa, 0x08),
+                't' => try buf.append(self.gpa, 0x09),
+                'n' => try buf.append(self.gpa, 0x0a),
+                'f' => try buf.append(self.gpa, 0x0c),
+                'r' => try buf.append(self.gpa, 0x0d),
+                'e' => try buf.append(self.gpa, 0x1b),
+                'o' => {
+                    if (ss.available() < 3) return Error.BadString;
+                    const cc = try std.fmt.parseInt(u8, ss.take(3), 8);
+                    try buf.append(self.gpa, cc);
+                },
+                'x' => {
+                    if (ss.available() < 2) return Error.BadString;
+                    const cc = try std.fmt.parseInt(u8, ss.take(2), 16);
+                    try buf.append(self.gpa, cc);
+                },
+                else => return Error.BadString,
+            }
+        } else {
+            try buf.append(self.gpa, nc);
+        }
+    }
+
+    return self.newNode(
+        .{ .string = try buf.toOwnedSlice(self.gpa) },
+        state.loc,
+    );
+}
+
+fn parseInterpolation(self: *Self, interp: []const u8) Error!EltRef {
+    var node: ?EltRef = null;
+    var pos: usize = 0;
+    while (pos < interp.len) : (pos += 1) {
+        const start = pos;
+        while (pos < interp.len and interp[pos] != '.')
+            pos += 1;
+        if (pos == start) return Error.SyntaxError;
+        const rhs = try self.newNode(
+            .{ .symbol = interp[start..pos] },
+            self.state.loc,
+        );
+        node = if (node) |lhs|
+            try self.newNode(
+                .{ .binary_op = .{ .op = .@".", .lhs = lhs, .rhs = rhs } },
+                self.state.loc, // TODO that's not right
+            )
+        else
+            rhs;
+    }
+    return node.?;
+}
+
+fn parseDoubleQuotedString(self: *Self, str: []const u8) Error!EltRef {
+    const state = self.state;
+    try self.advance();
+    var node: ?EltRef = null;
+    var ss = StringScanner{ .str = str };
+
+    while (ss.nextStringToken()) |tok| {
+        const rhs = switch (tok) {
+            .literal => |l| try self.parseDoubleQuotedLiteral(l),
+            .interp => |i| try self.parseInterpolation(i),
+        };
+        node = if (node) |lhs|
+            try self.newNode(
+                .{ .binary_op = .{ .op = ._, .lhs = lhs, .rhs = rhs } },
+                state.loc,
+            )
+        else
+            rhs;
+    }
+
+    if (node) |n|
+        return n;
+
+    // Default empty string
+    return self.newNode(
+        .{ .string = "" },
+        state.loc,
+    );
+}
+
+fn parseAtom(self: *Self) Error!EltRef {
+    const state = self.state;
+    switch (state.tok.?) {
+        .keyword => |kw| {
+            switch (kw) {
+                .@"-", .NOT => |op| {
+                    try self.advance();
+                    const arg = try self.parseAtom();
+                    return try self.newNode(
+                        .{ .unary_op = .{ .op = op, .arg = arg } },
+                        state.loc,
+                    );
+                },
+                .@"(" => {
+                    const res = try self.advanceAndParseExpr();
+                    // TODO assign_stmt -> assign_expr
+                    if (!self.nextKeywordIs(.@")"))
+                        return Error.MissingParen;
+                    try self.advance();
+                    return self.parenthesise(res);
+                },
+                .@"$" => {
+                    return try self.parseRef();
+                },
+                .@"[" => {
+                    try self.advance();
+                    const array = try self.parseList(.@"]", false);
+                    return try self.newNode(
+                        .{ .array = array },
+                        state.loc,
+                    );
+                },
+                .@"{" => {
+                    return try self.parseObject();
+                },
+                else => return Error.SyntaxError,
+            }
+        },
+        .int => |n| {
+            const node = try self.newNode(.{ .int = n }, state.loc);
+            try self.advance();
+            return node;
+        },
+        .float => |n| {
+            const node = try self.newNode(.{ .float = n }, state.loc);
+            try self.advance();
+            return node;
+        },
+        .symbol => {
+            return try self.parseRef();
+        },
+        .sq_string => |s| {
+            return try self.parseSingleQuotedString(s);
+        },
+        .dq_string => |s| {
+            return try self.parseDoubleQuotedString(s);
+        },
+        else => return Error.SyntaxError,
+    }
+}
+
+fn parseAssign(self: *Self) Error!EltRef {
+    const lvalue = try self.parseAtom();
+    const state = self.state;
+    if (self.nextKeywordIs(.@"=")) {
+        const rvalue = try self.advanceAndParseExpr();
+        return self.newNode(
+            .{ .assign_stmt = .{ .lvalue = lvalue, .rvalue = rvalue } },
+            state.loc,
+        );
+    }
+    return lvalue;
+}
+
+fn parseMulDiv(self: *Self) Error!EltRef {
+    return try self.parseBinOp(
+        &.{ .@"*", .@"/", .DIV, .MOD },
+        parseAssign,
+    );
+}
+
+fn parseAddSub(self: *Self) Error!EltRef {
+    return try self.parseBinOp(
+        &.{ .@"+", .@"-", ._ },
+        parseMulDiv,
+    );
+}
+
+fn parseInequality(self: *Self) Error!EltRef {
+    return try self.parseBinOp(
+        &.{ .@"<", .@"<=", .@">", .@">=", .@"==", .@"!=" },
+        parseAddSub,
+    );
+}
+
+fn parseAnd(self: *Self) Error!EltRef {
+    return try self.parseBinOp(&.{.AND}, parseInequality);
+}
+
+fn parseOr(self: *Self) Error!EltRef {
+    return try self.parseBinOp(&.{.OR}, parseAnd);
+}
+
+fn parseCond(self: *Self) Error!EltRef {
+    const cond = try self.parseOr();
+
+    if (!self.nextKeywordIs(.@"?"))
+        return cond;
+
+    const state = self.state;
+
+    const THEN = try self.advanceAndParseExpr();
+
+    if (!self.nextKeywordIs(.@":"))
+        return Error.MissingColon;
+
+    const ELSE = try self.advanceAndParseExpr();
+
+    return self.newNode(
+        .{ .if_op = .{ .cond = cond, .THEN = THEN, .ELSE = ELSE } },
+        state.loc,
+    );
+}
+
+fn advanceAndParseExpr(self: *Self) Error!EltRef {
+    try self.advance();
+    return try self.parseExpr();
+}
+
+pub fn parseExpr(self: *Self) Error!EltRef {
+    return try self.parseCond();
+}
+
+test "parseExpr" {
+    const cases = &[_]struct { src: []const u8, want: []const u8 }{
+        .{ .src = "[% 1 %]", .want = "1" },
+        .{ .src = "[% -1 %]", .want = "-1" },
+        .{ .src = "[% (-(1)) %]", .want = "-1" },
+        .{ .src = "[% 1 + 3.5 %]", .want = "(1 + 3.5)" },
+        .{ .src = "[% 1 + 3 * 2 %]", .want = "(1 + (3 * 2))" },
+        .{ .src = "[% (1 + 3) * 2 %]", .want = "((1 + 3) * 2)" },
+        .{ .src = "[% foo %]", .want = "foo" },
+        .{ .src = "[% foo.0 %]", .want = "foo.0" },
+        // .{ .src = "[% foo.0.1 %]", .want = "foo.0.1" },
+        .{ .src = "[% $$foo %]", .want = "$$foo" },
+        .{ .src = "[% foo.bar %]", .want = "foo.bar" },
+        .{ .src = "[% $foo.bar %]", .want = "$foo.bar" },
+        .{ .src = "[% foo.$bar %]", .want = "foo.$bar" },
+        .{ .src = "[% !a || b && c %]", .want = "(NOT a OR (b AND c))" },
+        .{ .src = "[% !(a || b && c) %]", .want = "NOT (a OR (b AND c))" },
+        .{ .src = "[% a <> 1 %]", .want = "(a != 1)" },
+        .{ .src = "[% foo(1, 2, 3) %]", .want = "foo(1, 2, 3)" },
+        .{ .src = "[% bar(1/2) %]", .want = "bar((1 / 2))" },
+        .{ .src = "[% bar(1/2)(!4) %]", .want = "bar((1 / 2))(NOT 4)" },
+        .{ .src = "[% bar(1/2)(!pog(3)).foo %]", .want = "bar((1 / 2))(NOT pog(3)).foo" },
+        .{ .src = "[% [ ] %]", .want = "[]" },
+        .{ .src = "[% [1, -2, 3] %]", .want = "[1, -2, 3]" },
+        .{ .src = "[% [1 -2 3] %]", .want = "[(1 - 2), 3]" },
+        .{ .src = "[% [1 (-2) 3] %]", .want = "[1, -2, 3]" },
+        .{ .src = "[% [a (3)] %]", .want = "[a(3)]" },
+        .{ .src = "[% [a, (3)] %]", .want = "[a, 3]" },
+        .{ .src = "[% [bar(1/2)(!pog(3)).foo] %]", .want = "[bar((1 / 2))(NOT pog(3)).foo]" },
+        .{ .src = "[% a = 3 %]", .want = "a = 3" },
+        .{ .src = "[% ((a = 3)) %]", .want = "(a = 3)" },
+        .{ .src = "[% a = (b = 3) %]", .want = "a = (b = 3)" },
+        .{ .src = "[% 'Hello' %]", .want = "\"Hello\"" },
+        .{ .src = "[% \"Hello\" %]", .want = "\"Hello\"" },
+        .{ .src = "[% \"Hello\\x00\" %]", .want = "\"Hello\\x00\"" },
+        .{ .src = "[% \"Hello\\x41\" %]", .want = "\"HelloA\"" },
+        .{ .src = "[% \"Hello $name\" %]", .want = "(\"Hello \" _ name)" },
+        .{ .src = "[% \"Hello $name.first\" %]", .want = "(\"Hello \" _ name.first)" },
+        .{ .src = "[% \"$name\" %]", .want = "name" },
+        .{ .src = "[% \"$foo$bar$baz\" %]", .want = "((foo _ bar) _ baz)" },
+        .{ .src = "[% a ? 0 : 1 %]", .want = "a ? 0 : 1" },
+        .{ .src = "[% a ? b ? 1 : 2 : c ? 3 : 4 %]", .want = "a ? b ? 1 : 2 : c ? 3 : 4" },
+        .{ .src = "[% {} %]", .want = "{}" },
+        .{ .src = "[% {a => 1} %]", .want = "{a => 1}" },
+        .{ .src = "[% {a = 1} %]", .want = "{a => 1}" },
+        .{ .src = "[% {a => 1, b = 2} %]", .want = "{a => 1, b => 2}" },
+        .{ .src = "[% {a = 1 b = 2} %]", .want = "{a => 1, b => 2}" },
+        .{ .src = "[% {(a = 1) = 2} %]", .want = "{(a = 1) => 2}" },
+        .{ .src = "[% header(title='Hello World') %]", .want = "header(title = \"Hello World\")" },
+        .{
+            .src = "[% header(title=\"Hello $name\") %]",
+            .want = "header(title = (\"Hello \" _ name))",
+        },
+    };
+
+    for (cases) |case| {
+        var alloc = std.heap.ArenaAllocator.init(testing.allocator);
+        defer alloc.deinit();
+        const gpa = alloc.allocator();
+
+        const iter = TokenIter.init(case.src);
+        var parser = try Self.init(gpa, iter);
+
+        try testing.expectEqual(types.Token{ .start = .{} }, parser.state.tok.?);
+        try parser.advance();
+        const elt = try parser.parseExpr();
+        try testing.expectEqual(types.Token{ .end = .{} }, parser.state.tok.?);
+
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        var w = std.Io.Writer.Allocating.fromArrayList(gpa, &buf);
+        defer w.deinit();
+        try w.writer.print("{f}", .{elt});
+        var output = w.toArrayList();
+        defer output.deinit(gpa);
+        // std.debug.print("{s}\n", .{output.items});
+        try testing.expectEqualDeep(case.want, output.items);
+    }
+}
+
+const std = @import("std");
+const assert = std.debug.assert;
+const testing = std.testing;
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
+
+const types = @import("./types.zig");
+
+const TokenIter = @import("./TokenIter.zig");
+
+const ASTNode = @import("./node.zig").ASTNode;
+const ASTElement = @import("./node.zig").ASTElement;
+
+const StringScanner = @import("./StringScanner.zig");
