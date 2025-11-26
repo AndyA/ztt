@@ -9,8 +9,6 @@ const ASTError = types.TokerError || Allocator.Error || error{
     BadString,
 };
 
-const EltRef = *const ASTElement;
-
 const ParserState = struct {
     tok: ?types.Token = null,
     loc: types.Location = .{},
@@ -23,6 +21,7 @@ const ParserState = struct {
 pub const ASTParser = struct {
     const Self = @This();
     const Keyword = types.Keyword;
+    const EltRef = *const ASTElement;
     const ParseFn = fn (*Self) ASTError!EltRef;
 
     gpa: Allocator,
