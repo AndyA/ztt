@@ -2,7 +2,7 @@
     .name = .ztt,
     .version = "0.0.0",
     .fingerprint = 0xba1c3d438366f9f7, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.16.0-dev",
+    .minimum_zig_version = "0.15.2",
     .dependencies = .{},
     .paths = .{
         "build.zig",

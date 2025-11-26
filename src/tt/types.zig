@@ -105,11 +105,13 @@ pub const Token = union(enum) {
     float: f64,
     sq_string: []const u8,
     dq_string: []const u8,
+    string: []const u8,
     keyword: Keyword,
 };
 
 pub const TokerError = error{
     MissingQuote,
+    BadSymbol,
     UnexpectedEOF,
     SyntaxError,
 } || std.fmt.ParseFloatError || std.fmt.ParseIntError;
