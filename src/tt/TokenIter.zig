@@ -68,7 +68,6 @@ fn advance(self: *TI) u8 {
     const nc = self.peek();
     self.pos += 1;
     if (nc == '\n') {
-        @branchHint(.unlikely);
         self.line_number += 1;
         self.line_start = self.pos;
     }
