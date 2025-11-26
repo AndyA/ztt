@@ -110,7 +110,7 @@ pub const ASTNode = union(enum) {
                 try formatObject(w, o.keys, o.values);
                 try w.print("}}", .{});
             },
-            .string => |s| {
+            .string, .literal => |s| {
                 // TODO escape
                 try w.print("\"", .{});
                 try formatString(w, s);
@@ -118,6 +118,11 @@ pub const ASTNode = union(enum) {
             },
             .if_op => |i| {
                 try w.print("({f} ? {f} : {f})", .{ i.cond, i.THEN, i.ELSE });
+            },
+            .block => |block| {
+                for (block) |stm| {
+                    try w.print("{f};\n", .{stm});
+                }
             },
             else => unreachable,
         }

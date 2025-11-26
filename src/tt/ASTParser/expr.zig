@@ -1,5 +1,3 @@
-const Keyword = types.Keyword;
-const EltRef = *const ASTElement;
 const ParseFn = fn (*ASTParser) Error!EltRef;
 
 fn parseList(p: *ASTParser, end: Keyword, require_commas: bool) Error![]EltRef {
@@ -16,6 +14,9 @@ fn parseList(p: *ASTParser, end: Keyword, require_commas: bool) Error![]EltRef {
 
         if (p.nextKeywordIs(.@",")) {
             try p.advance();
+        } else if (p.nextKeywordIs(end)) {
+            try p.advance();
+            break;
         } else if (require_commas) {
             return Error.MissingComma;
         }
@@ -476,7 +477,7 @@ test "expr" {
 
         try testing.expectEqual(types.Token{ .start = .{} }, parser.state.tok.?);
         try parser.advance();
-        const elt = try parser.parseExpr();
+        const elt = try parseExpr(&parser);
         try testing.expectEqual(types.Token{ .end = .{} }, parser.state.tok.?);
 
         var buf: std.ArrayListUnmanaged(u8) = .empty;
@@ -495,13 +496,16 @@ const assert = std.debug.assert;
 const testing = std.testing;
 
 const types = @import("../types.zig");
+const Keyword = types.Keyword;
 
 const TokenIter = @import("../TokenIter.zig");
 
-const ASTParser = @import("../ASTParser.zig");
-const Error = ASTParser.Error;
 const ASTNode = @import("../node.zig").ASTNode;
 const ASTElement = @import("../node.zig").ASTElement;
 
 const StringScanner = @import("../StringScanner.zig");
 const StringIter = @import("../StringIter.zig");
+
+const ASTParser = @import("../ASTParser.zig");
+const Error = ASTParser.Error;
+const EltRef = ASTParser.EltRef;

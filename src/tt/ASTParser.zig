@@ -1,6 +1,4 @@
-const ASTParser = @This();
-const Keyword = types.Keyword;
-const EltRef = *const ASTElement;
+pub const EltRef = *const ASTElement;
 
 pub const Error = types.TokerError || Allocator.Error || error{
     Overflow,
@@ -61,14 +59,21 @@ pub fn nextKeywordIs(p: *ASTParser, want: Keyword) bool {
     }
     return false;
 }
-
+test {
+    _ = @import("./ASTParser/expr.zig");
+    _ = @import("./ASTParser/template.zig");
+}
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const types = @import("./types.zig");
 const expr = @import("./ASTParser/expr.zig");
+const template = @import("./ASTParser/template.zig");
 
 const TokenIter = @import("./TokenIter.zig");
 
 const ASTNode = @import("./node.zig").ASTNode;
 const ASTElement = @import("./node.zig").ASTElement;
+
+const ASTParser = @This();
+const Keyword = types.Keyword;
