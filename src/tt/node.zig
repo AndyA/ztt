@@ -1,7 +1,6 @@
-const EltRef = *const ASTElement;
-
 pub const ASTNode = union(enum) {
     const Node = @This();
+    const EltRef = *const ASTElement;
 
     const Assign = struct {
         lvalue: EltRef,
@@ -151,6 +150,6 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
-const toker = @import("./tokeniser.zig");
-const Location = toker.Location;
-const Keyword = toker.Keyword;
+const types = @import("./types.zig");
+const Keyword = types.Keyword;
+const Location = types.Location;

@@ -1,8 +1,4 @@
-fn isInterp(chr: u8) bool {
-    return std.ascii.isAlphanumeric(chr) or chr == '_' or chr == '.';
-}
-
-const ASTError = toker.TokerError || Allocator.Error || error{
+const ASTError = types.TokerError || Allocator.Error || error{
     Overflow,
     MissingParen,
     MissingTerminal,
@@ -16,102 +12,17 @@ const ASTError = toker.TokerError || Allocator.Error || error{
 const EltRef = *const ASTElement;
 
 const ParserState = struct {
-    tok: ?Token = null,
-    loc: Location = .{},
+    tok: ?types.Token = null,
+    loc: types.Location = .{},
 
     fn eof(self: *const ParserState) bool {
         return self.tok == null;
     }
 };
 
-const StringToken = union(enum) {
-    literal: []const u8,
-    interp: []const u8,
-};
-
-const SymbolToken = union(enum) {
-    name: []const u8,
-    index: i64,
-    keyword: Keyword,
-};
-
-const StringScanner = struct {
-    const SS = @This();
-    str: []const u8,
-    pos: usize = 0,
-
-    pub fn available(self: SS) usize {
-        return self.str.len - self.pos;
-    }
-
-    pub fn eof(self: SS) bool {
-        return self.available() == 0;
-    }
-
-    pub fn peek(self: SS) u8 {
-        assert(!self.eof());
-        return self.str[self.pos];
-    }
-
-    pub fn next(self: *SS) u8 {
-        assert(!self.eof());
-        defer self.pos += 1;
-        return self.str[self.pos];
-    }
-
-    pub fn take(self: *SS, len: usize) []const u8 {
-        assert(self.available() >= len);
-        defer self.pos += len;
-        return self.str[self.pos .. self.pos + len];
-    }
-
-    pub fn nextStringToken(self: *SS) ?StringToken {
-        if (self.eof()) return null;
-        const nc = self.next();
-        if (nc == '$') {
-            const start = self.pos;
-            while (!self.eof() and isInterp(self.peek()))
-                _ = self.next();
-
-            return if (self.pos == start)
-                .{ .literal = "$" }
-            else
-                .{ .interp = self.str[start..self.pos] };
-        } else {
-            const start = self.pos - 1;
-            while (!self.eof() and self.peek() != '$') {
-                if (self.next() == '\\' and !self.eof())
-                    _ = self.next();
-            }
-            return .{ .literal = self.str[start..self.pos] };
-        }
-    }
-
-    pub fn nextSymbolToken(self: *SS) ?SymbolToken {
-        if (self.eof()) return null;
-        const start = self.pos;
-        const nc = self.next();
-        return switch (nc) {
-            '.' => .{ .keyword = .@"." },
-            '$' => .{ .keyword = .@"$" },
-            '0'...'9' => blk: {
-                while (!self.eof() and std.ascii.isDigit(self.peek()))
-                    _ = self.next();
-                const index = try std.fmt.parseInt(i64, self.str[start..self.pos]);
-                break :blk .{ .index = index };
-            },
-            'a'...'z', 'A'...'Z', '_' => blk: {
-                while (!self.eof() and toker.isSymbol(self.peek()))
-                    _ = self.next();
-                break :blk .{ .name = self.str[start..self.pos] };
-            },
-            else => unreachable,
-        };
-    }
-};
-
 pub const ASTParser = struct {
     const Self = @This();
+    const Keyword = types.Keyword;
     const ParseFn = fn (*Self) ASTError!EltRef;
 
     gpa: Allocator,
@@ -140,7 +51,7 @@ pub const ASTParser = struct {
         try self.nextState();
     }
 
-    fn newNode(self: *const Self, node: ASTNode, loc: Location) Allocator.Error!*ASTElement {
+    fn newNode(self: *const Self, node: ASTNode, loc: types.Location) Allocator.Error!*ASTElement {
         return try ASTElement.create(self.gpa, node, loc);
     }
 
@@ -628,10 +539,10 @@ test "parseExpr" {
         const iter = TokenIter.init(case.src);
         var parser = try ASTParser.init(gpa, iter);
 
-        try testing.expectEqual(Token{ .start = .{} }, parser.state.tok.?);
+        try testing.expectEqual(types.Token{ .start = .{} }, parser.state.tok.?);
         try parser.advance();
         const elt = try parser.parseExpr();
-        try testing.expectEqual(Token{ .end = .{} }, parser.state.tok.?);
+        try testing.expectEqual(types.Token{ .end = .{} }, parser.state.tok.?);
 
         var buf: std.ArrayListUnmanaged(u8) = .empty;
         var w = std.Io.Writer.Allocating.fromArrayList(gpa, &buf);
@@ -650,11 +561,11 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
-const toker = @import("./tokeniser.zig");
-const Token = toker.Token;
-const TokenIter = toker.TokenIter;
-const Keyword = toker.Keyword;
-const Location = toker.Location;
+const types = @import("./types.zig");
+
+const TokenIter = @import("./TokenIter.zig");
 
 const ASTNode = @import("./node.zig").ASTNode;
 const ASTElement = @import("./node.zig").ASTElement;
+
+const StringScanner = @import("./StringScanner.zig");
