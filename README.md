@@ -27,6 +27,10 @@ Parsing foo.0.0 as <symbol>.<int>.<int>
 
 Maybe parse the whole symbol (including dots, indexes, refs) in the toker and split in the parser? That might help with bareword parsing too - maybe a symbol can include '/' too?
 
+### Plan
+
+Make the toker aware of paths and the contents of double quotes strings - new toker states.
+
 ## Other languages to experiment with
 
 - shell

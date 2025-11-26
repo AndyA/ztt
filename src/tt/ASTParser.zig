@@ -314,9 +314,9 @@ fn parseDoubleQuotedString(self: *Self, str: []const u8) Error!EltRef {
     const state = self.state;
     try self.advance();
     var node: ?EltRef = null;
-    var ss = StringScanner{ .str = str };
+    var si = StringIter{ .ss = StringScanner{ .str = str } };
 
-    while (ss.nextStringToken()) |tok| {
+    while (si.next()) |tok| {
         const rhs = switch (tok) {
             .literal => |l| try self.parseDoubleQuotedLiteral(l),
             .interp => |i| try self.parseInterpolation(i),
@@ -566,3 +566,4 @@ const ASTNode = @import("./node.zig").ASTNode;
 const ASTElement = @import("./node.zig").ASTElement;
 
 const StringScanner = @import("./StringScanner.zig");
+const StringIter = @import("./StringIter.zig");
