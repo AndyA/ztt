@@ -74,21 +74,21 @@ fn advance(self: *TI) u8 {
     return nc;
 }
 
-fn skipPredicate(self: *TI, comptime pred: fn (u8) bool) void {
+fn skipWhilePredicate(self: *TI, comptime pred: fn (u8) bool) void {
     while (!self.eof() and pred(self.peek()))
         _ = self.advance();
 }
 
 fn skipSpace(self: *TI) void {
-    self.skipPredicate(std.ascii.isWhitespace);
+    self.skipWhilePredicate(std.ascii.isWhitespace);
 }
 
 fn skipDigits(self: *TI) void {
-    self.skipPredicate(std.ascii.isDigit);
+    self.skipWhilePredicate(std.ascii.isDigit);
 }
 
 fn skipSymbol(self: *TI) void {
-    self.skipPredicate(ctype.isSymbol);
+    self.skipWhilePredicate(ctype.isSymbol);
 }
 
 fn wantDigits(self: *TI) TokerError!void {
