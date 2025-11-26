@@ -89,7 +89,7 @@ fn parseList(self: *Self, end: Keyword, require_commas: bool) Error![]EltRef {
             return Error.MissingComma;
         }
     }
-    return list.items;
+    return try list.toOwnedSlice(self.gpa);
 }
 
 fn parseObject(self: *Self) Error!EltRef {
@@ -134,7 +134,10 @@ fn parseObject(self: *Self) Error!EltRef {
     assert(keys.items.len == values.items.len);
 
     return try self.newNode(
-        .{ .object = .{ .keys = keys.items, .values = values.items } },
+        .{ .object = .{
+            .keys = try keys.toOwnedSlice(self.gpa),
+            .values = try values.toOwnedSlice(self.gpa),
+        } },
         state.loc,
     );
 }
@@ -507,8 +510,8 @@ test "parseExpr" {
         .{ .src = "[% \"Hello $name.first\" %]", .want = "(\"Hello \" _ name.first)" },
         .{ .src = "[% \"$name\" %]", .want = "name" },
         .{ .src = "[% \"$foo$bar$baz\" %]", .want = "((foo _ bar) _ baz)" },
-        .{ .src = "[% a ? 0 : 1 %]", .want = "a ? 0 : 1" },
-        .{ .src = "[% a ? b ? 1 : 2 : c ? 3 : 4 %]", .want = "a ? b ? 1 : 2 : c ? 3 : 4" },
+        .{ .src = "[% a ? 0 : 1 %]", .want = "(a ? 0 : 1)" },
+        .{ .src = "[% a ? b ? 1 : 2 : c ? 3 : 4 %]", .want = "(a ? (b ? 1 : 2) : (c ? 3 : 4))" },
         .{ .src = "[% {} %]", .want = "{}" },
         .{ .src = "[% {a => 1} %]", .want = "{a => 1}" },
         .{ .src = "[% {a = 1} %]", .want = "{a => 1}" },

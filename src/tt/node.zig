@@ -117,7 +117,7 @@ pub const ASTNode = union(enum) {
                 try w.print("\"", .{});
             },
             .if_op => |i| {
-                try w.print("{f} ? {f} : {f}", .{ i.cond, i.THEN, i.ELSE });
+                try w.print("({f} ? {f} : {f})", .{ i.cond, i.THEN, i.ELSE });
             },
             else => unreachable,
         }
