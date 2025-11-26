@@ -1,4 +1,34 @@
 const State = enum { LITERAL, BLOCK };
+
+fn swallowStart(str: []const u8) []const u8 {
+    var pos: usize = 0;
+    while (pos < str.len and std.ascii.isWhitespace(str[pos]))
+        pos += 1;
+    return str[pos..];
+}
+
+fn swallowEnd(str: []const u8) []const u8 {
+    var pos = str.len;
+    while (pos > 0 and std.ascii.isWhitespace(str[pos - 1]))
+        pos -= 1;
+    return str[0..pos];
+}
+
+fn swallowWhite(str: []const u8, start: bool, end: bool) []const u8 {
+    var s = str;
+    if (start) s = swallowStart(s);
+    if (end) s = swallowEnd(s);
+    return s;
+}
+
+fn isSwallow(p: *const ASTParser) bool {
+    if (p.eof()) return false;
+    return switch (p.state.tok.?) {
+        inline .start, .end => |tok| tok.swallow,
+        else => false,
+    };
+}
+
 pub fn parseBlock(p: *ASTParser) Error!EltRef {
     return try expr.parseExpr(p);
 }
@@ -6,26 +36,30 @@ pub fn parseBlock(p: *ASTParser) Error!EltRef {
 pub fn parseTemplate(p: *ASTParser) Error!EltRef {
     var list: std.ArrayListUnmanaged(EltRef) = .empty;
     const start_state = p.state;
+    var swallow_start = false;
 
     while (!p.eof()) {
         const state = p.state;
         switch (state.tok.?) {
             .literal => |lit| {
                 try p.advance();
-                const node = try p.newNode(.{ .literal = lit }, state.loc);
+                const node = try p.newNode(
+                    .{ .literal = swallowWhite(lit, swallow_start, isSwallow(p)) },
+                    state.loc,
+                );
                 try list.append(p.gpa, node);
+                swallow_start = false;
             },
-            .start => |swallow| {
-                _ = swallow;
+            .start => {
                 try p.advance();
                 const node = try parseBlock(p);
                 if (p.eof() or p.state.tok.? != .end)
                     return Error.SyntaxError;
+                swallow_start = isSwallow(p);
                 try p.advance();
                 try list.append(p.gpa, node);
             },
             else => {
-                std.debug.print("{any}", .{state.tok});
                 return Error.SyntaxError;
             },
         }
@@ -50,6 +84,21 @@ test "template" {
         , .want = 
         \\"Hello ";
         \\a = 1;
+        \\
+        },
+        .{ .src = 
+        \\[% "Hello "; a = 1 %]
+        , .want = 
+        \\"Hello ";
+        \\a = 1;
+        \\
+        },
+        .{ .src = 
+        \\Hello [%- a = 1 -%] World
+        , .want = 
+        \\"Hello";
+        \\a = 1;
+        \\"World";
         \\
         },
     };
