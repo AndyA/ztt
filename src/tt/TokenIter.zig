@@ -9,6 +9,8 @@ state: enum {
     TEXT,
     START,
     EXPR,
+    SYMBOL,
+    DQ_STRING,
     SEMI,
     COMMENT,
     BLOCK_COMMENT,
@@ -162,10 +164,12 @@ pub fn next(self: *TI) TokerError!?Token {
                     while (!self.eof() and ctype.isSymbol(self.peek()))
                         _ = self.advance();
                     const sym = self.src[start..self.pos];
-                    break :parse if (Keyword.lookup(sym)) |op|
-                        .{ .keyword = op }
-                    else
-                        .{ .symbol = sym };
+                    if (Keyword.lookup(sym)) |op| {
+                        break :parse .{ .keyword = op };
+                    } else {
+                        self.state = .SYMBOL;
+                        break :parse .{ .symbol = sym };
+                    }
                 },
                 '0'...'9' => {
                     self.skipDigits();
@@ -244,6 +248,37 @@ pub fn next(self: *TI) TokerError!?Token {
                 break :parse .{ .keyword = kw };
             break :parse error.SyntaxError;
         },
+        .SYMBOL => {
+            if (self.eof()) break :parse error.UnexpectedEOF;
+            self.markTokenStart();
+            const start = self.pos;
+            switch (self.peek()) {
+                '.' => {
+                    _ = self.advance();
+                    break :parse .{ .keyword = .@"." };
+                },
+                '$' => {
+                    _ = self.advance();
+                    break :parse .{ .keyword = .@"$" };
+                },
+                'a'...'z', 'A'...'Z', '_' => {
+                    while (!self.eof() and ctype.isSymbol(self.peek()))
+                        _ = self.advance();
+                    const sym = self.src[start..self.pos];
+                    break :parse .{ .symbol = sym };
+                },
+                '0'...'9' => {
+                    self.skipDigits();
+                    const int = try std.fmt.parseInt(i64, self.src[start..self.pos], 10);
+                    break :parse .{ .int = int };
+                },
+                else => {
+                    self.state = .EXPR;
+                    continue :parse self.state;
+                },
+            }
+        },
+        .DQ_STRING => unreachable,
         .SEMI => {
             self.state = .EXPR;
             break :parse .{ .start = .{} };
@@ -341,12 +376,16 @@ test "TokenIter" {
             .{ .end = .{} },
             .{ .literal = " world" },
         } },
-        .{ .src = "hello [% foo.bar %] world", .want = &[_]T{
+        .{ .src = "hello [% foo.bar.0.1 %] world", .want = &[_]T{
             .{ .literal = "hello " },
             .{ .start = .{} },
             .{ .symbol = "foo" },
             .{ .keyword = .@"." },
             .{ .symbol = "bar" },
+            .{ .keyword = .@"." },
+            .{ .int = 0 },
+            .{ .keyword = .@"." },
+            .{ .int = 1 },
             .{ .end = .{} },
             .{ .literal = " world" },
         } },

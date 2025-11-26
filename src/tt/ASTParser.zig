@@ -483,7 +483,7 @@ test "parseExpr" {
         .{ .src = "[% (1 + 3) * 2 %]", .want = "((1 + 3) * 2)" },
         .{ .src = "[% foo %]", .want = "foo" },
         .{ .src = "[% foo.0 %]", .want = "foo.0" },
-        // .{ .src = "[% foo.0.1 %]", .want = "foo.0.1" },
+        .{ .src = "[% foo.0.1 %]", .want = "foo.0.1" },
         .{ .src = "[% $$foo %]", .want = "$$foo" },
         .{ .src = "[% foo.bar %]", .want = "foo.bar" },
         .{ .src = "[% $foo.bar %]", .want = "$foo.bar" },
