@@ -27,10 +27,62 @@ fn isSwallow(p: *const ASTParser) bool {
     };
 }
 
-fn parseStatement(p: *ASTParser) Error!EltRef {
+fn isBlockEnd(p: *const ASTParser) bool {
+    if (p.eof()) return false;
     return switch (p.state.tok.?) {
-        else => try expr.parseExpr(p),
+        .keyword => |kw| switch (kw) {
+            .END, .ELSE, .ELSIF => true,
+        },
+        else => false,
     };
+}
+
+fn parseCompound(p: *ASTParser) Error!EltRef {
+    var list: std.ArrayListUnmanaged(EltRef) = .empty;
+    const start_state = p.state;
+
+    while (true) {
+        if (p.eof())
+            return Error.UnexpectedEOF;
+        if (p.state.tok.? != .end)
+            return Error.SyntaxError;
+        var swallow_start = isSwallow(p);
+        try p.advance();
+        while (!p.eof() and p.state.tok.? == .literal) {
+            const state = p.state;
+            try p.advance();
+            const node = try p.newNode(
+                .{ .literal = swallowWhite(state.tok.?.literal, swallow_start, isSwallow(p)) },
+                state.loc,
+            );
+            try list.append(p.gpa, node);
+            swallow_start = false;
+        }
+        if (p.eof())
+            return Error.UnexpectedEOF;
+        if (p.state.tok.? != .start)
+            return Error.SyntaxError;
+        try p.advance();
+        if (isBlockEnd(p))
+            break;
+        try list.append(p.gpa, try parseStatement(p));
+    }
+
+    return try p.newNode(
+        .{ .block = try list.toOwnedSlice(p.gpa) },
+        start_state.loc,
+    );
+}
+
+fn parseStatement(p: *ASTParser) Error!EltRef {
+    switch (p.state.tok.?) {
+        .keyword => |kw| switch (kw) {
+            else => {},
+        },
+        else => {},
+    }
+
+    return try expr.parseExpr(p);
 }
 
 pub fn parseTemplate(p: *ASTParser) Error!EltRef {

@@ -7,12 +7,6 @@ pub const ASTNode = union(enum) {
         rvalue: EltRef,
     };
 
-    const Cond = struct {
-        cond: EltRef, // expr
-        THEN: EltRef, // block
-        ELSE: EltRef, // block
-    };
-
     literal: []const u8,
     string: []const u8,
     float: f64,
@@ -33,9 +27,17 @@ pub const ASTNode = union(enum) {
 
     unary_op: struct { op: Keyword, arg: EltRef },
     binary_op: struct { op: Keyword, lhs: EltRef, rhs: EltRef },
-    if_op: Cond,
+    if_op: struct {
+        cond: EltRef, // expr
+        THEN: EltRef, // block
+        ELSE: EltRef, // block
+    },
 
-    IF: Cond,
+    IF: struct {
+        cond: EltRef, // expr
+        THEN: EltRef, // block
+        ELSE: ?EltRef, // block
+    },
 
     pub fn format(self: ASTNode, w: *Io.Writer) Io.Writer.Error!void {
         const in = Indented{ .node = self, .indent = 0 };
@@ -51,8 +53,8 @@ pub const ASTNode = union(enum) {
             for (0..self.indent) |_| try w.print("    ", .{});
         }
 
-        fn nest(self: Self, node: ASTNode) Self {
-            return Self{ .node = node, .indent = self.indent + 1 };
+        fn nest(self: Self, elt: EltRef) Self {
+            return Self{ .node = elt.node, .indent = self.indent + 1 };
         }
 
         fn formatString(w: *Io.Writer, str: []const u8) Io.Writer.Error!void {
@@ -129,7 +131,6 @@ pub const ASTNode = union(enum) {
                     try w.print("}}", .{});
                 },
                 .string, .literal => |s| {
-                    // TODO escape
                     try w.print("\"", .{});
                     try formatString(w, s);
                     try w.print("\"", .{});
@@ -143,7 +144,18 @@ pub const ASTNode = union(enum) {
                         try w.print("{f};\n", .{stm});
                     }
                 },
-                else => unreachable,
+                .IF => |i| {
+                    try self.pad(w);
+                    try w.print("IF {f};\n", .{i.cond});
+                    try w.print("{f}", .{self.nest(i.THEN)});
+                    if (i.ELSE) |e| {
+                        try self.pad(w);
+                        try w.print("ELSE;\n", .{});
+                        try w.print("{f}", .{self.nest(e)});
+                    }
+                    try self.pad(w);
+                    try w.print("END;\n", .{});
+                },
             }
         }
     };
