@@ -231,8 +231,8 @@ test "template" {
         var output = w.toArrayList();
         defer output.deinit(gpa);
         std.debug.print(">> {any}\n", .{elt});
-        std.debug.print("++ {s} ++\n", .{case.want});
-        std.debug.print("-- {s} --\n", .{output.items});
+        std.debug.print("+<{s}>+\n", .{case.want});
+        std.debug.print("-<{s}>-\n", .{output.items});
         try testing.expectEqualDeep(case.want, output.items);
     }
 }
