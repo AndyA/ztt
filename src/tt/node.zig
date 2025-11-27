@@ -40,8 +40,7 @@ pub const ASTNode = union(enum) {
     },
 
     pub fn format(self: ASTNode, w: *Io.Writer) Io.Writer.Error!void {
-        const in = Indented{ .node = self, .indent = 0 };
-        try w.print("{f}", .{in});
+        try w.print("{f}", .{Indented{ .node = self, .indent = 0 }});
     }
 
     const Indented = struct {
