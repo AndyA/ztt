@@ -32,6 +32,7 @@ fn isBlockEnd(p: *const ASTParser) bool {
     return switch (p.state.tok.?) {
         .keyword => |kw| switch (kw) {
             .END, .ELSE, .ELSIF => true,
+            else => false,
         },
         else => false,
     };
@@ -69,14 +70,33 @@ fn parseCompound(p: *ASTParser) Error!EltRef {
     }
 
     return try p.newNode(
-        .{ .block = try list.toOwnedSlice(p.gpa) },
+        .{ .compound = try list.toOwnedSlice(p.gpa) },
         start_state.loc,
+    );
+}
+
+fn parseIF(p: *ASTParser) Error!EltRef {
+    const state = p.state;
+    try p.advance();
+    var cond = try expr.parseExpr(p);
+    if (state.tok.?.keyword == .UNLESS)
+        cond = try p.newNode(
+            .{ .unary_op = .{ .op = .NOT, .arg = cond } },
+            state.loc,
+        );
+    const THEN = try parseCompound(p);
+    assert(p.state.tok.?.keyword == .END);
+    try p.advance();
+    return try p.newNode(
+        .{ .IF = .{ .cond = cond, .THEN = THEN } },
+        state.loc,
     );
 }
 
 fn parseStatement(p: *ASTParser) Error!EltRef {
     switch (p.state.tok.?) {
         .keyword => |kw| switch (kw) {
+            .IF, .UNLESS => return try parseIF(p),
             else => {},
         },
         else => {},
@@ -118,7 +138,7 @@ pub fn parseTemplate(p: *ASTParser) Error!EltRef {
     }
 
     return try p.newNode(
-        .{ .block = try list.toOwnedSlice(p.gpa) },
+        .{ .compound = try list.toOwnedSlice(p.gpa) },
         start_state.loc,
     );
 }
@@ -153,6 +173,15 @@ test "template" {
         \\"World";
         \\
         },
+        .{ .src = 
+        \\[% IF a; "Hello"; END %]
+        , .want = 
+        \\IF a;
+        \\    "Hello";
+        \\END;
+        \\;
+        \\
+        },
     };
 
     for (cases) |case| {
@@ -171,9 +200,9 @@ test "template" {
         try w.writer.print("{f}", .{elt});
         var output = w.toArrayList();
         defer output.deinit(gpa);
-        // std.debug.print(">> {any}\n", .{elt});
-        // std.debug.print("++ {s} ++\n", .{case.want});
-        // std.debug.print("-- {s} --\n", .{output.items});
+        std.debug.print(">> {any}\n", .{elt});
+        std.debug.print("++ {s} ++\n", .{case.want});
+        std.debug.print("-- {s} --\n", .{output.items});
         try testing.expectEqualDeep(case.want, output.items);
     }
 }

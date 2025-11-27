@@ -17,7 +17,7 @@ pub const ASTNode = union(enum) {
         values: []EltRef,
     },
 
-    block: []EltRef, // top level and block bodies
+    compound: []EltRef, // top level and block bodies
 
     symbol: []const u8,
     ref: EltRef,
@@ -36,7 +36,7 @@ pub const ASTNode = union(enum) {
     IF: struct {
         cond: EltRef, // expr
         THEN: EltRef, // block
-        ELSE: ?EltRef, // block
+        ELSE: ?EltRef = null, // block
     },
 
     pub fn format(self: ASTNode, w: *Io.Writer) Io.Writer.Error!void {
@@ -138,8 +138,8 @@ pub const ASTNode = union(enum) {
                 .if_op => |i| {
                     try w.print("({f} ? {f} : {f})", .{ i.cond, i.THEN, i.ELSE });
                 },
-                .block => |block| {
-                    for (block) |stm| {
+                .compound => |cmp| {
+                    for (cmp) |stm| {
                         try self.pad(w);
                         try w.print("{f};\n", .{stm});
                     }
