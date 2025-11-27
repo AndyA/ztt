@@ -80,6 +80,15 @@ fn parseCompound(p: *ASTParser) Error!EltRef {
     );
 }
 
+fn wrapInCompound(p: *ASTParser, elt: EltRef) Error!EltRef {
+    var list = try p.gpa.alloc(EltRef, 1);
+    list[0] = elt;
+    return try p.newNode(
+        .{ .compound = list },
+        elt.loc,
+    );
+}
+
 fn parseIFBody(p: *ASTParser) Error!EltRef {
     const state = p.state;
     try p.advance();
@@ -104,7 +113,7 @@ fn parseIFBody(p: *ASTParser) Error!EltRef {
             );
         },
         .ELSIF => {
-            const ELSE = try parseIFBody(p);
+            const ELSE = try wrapInCompound(p, try parseIFBody(p));
             return try p.newNode(
                 .{ .IF = .{ .cond = cond, .THEN = THEN, .ELSE = ELSE } },
                 state.loc,
@@ -250,26 +259,42 @@ test "template" {
         \\END;
         \\
         },
-        // .{ .src =
-        // \\[% IF name -%]
-        // \\  [%- "Hello $name" -%]
-        // \\[%- ELSIF title -%]
-        // \\  [%- "Hi $title" -%]
-        // \\[%- ELSE -%]
-        // \\  [%- "Who?" -%]
-        // \\[%- END %]
-        // , .want =
-        // \\IF name;
-        // \\    ("Hello " _ name);
-        // \\ELSE;
-        // \\    IF title;
-        // \\        ("Hi " _ title);
-        // \\    ELSE;
-        // \\        "Who?";
-        // \\    END;
-        // \\END;
-        // \\
-        // },
+        .{ .src = 
+        \\[% IF name -%]
+        \\  [%- "Hello $name" -%]
+        \\[%- ELSIF title -%]
+        \\  [%- "Hi $title" -%]
+        \\[%- END %]
+        , .want = 
+        \\IF name;
+        \\    ("Hello " _ name);
+        \\ELSE;
+        \\    IF title;
+        \\        ("Hi " _ title);
+        \\    END;
+        \\END;
+        \\
+        },
+        .{ .src = 
+        \\[% IF name -%]
+        \\  [%- "Hello $name" -%]
+        \\[%- ELSIF title -%]
+        \\  [%- "Hi $title" -%]
+        \\[%- ELSE -%]
+        \\  [%- "Who?" -%]
+        \\[%- END %]
+        , .want = 
+        \\IF name;
+        \\    ("Hello " _ name);
+        \\ELSE;
+        \\    IF title;
+        \\        ("Hi " _ title);
+        \\    ELSE;
+        \\        "Who?";
+        \\    END;
+        \\END;
+        \\
+        },
     };
 
     for (cases) |case| {
@@ -288,8 +313,9 @@ test "template" {
         try w.writer.print("{f}", .{elt});
         var output = w.toArrayList();
         defer output.deinit(gpa);
-        std.debug.print("got:\n<{s}>\n\n", .{output.items});
-        std.debug.print("want:\n<{s}>\n\n", .{case.want});
+        // std.debug.print("{f}\n", .{std.json.fmt(elt, .{})});
+        // std.debug.print("got:\n<{s}>\n\n", .{output.items});
+        // std.debug.print("want:\n<{s}>\n\n", .{case.want});
         try testing.expectEqualDeep(case.want, output.items);
     }
 }

@@ -52,6 +52,10 @@ pub const ASTNode = union(enum) {
             for (0..self.indent) |_| try w.print("    ", .{});
         }
 
+        fn wrap(self: Self, elt: EltRef) Self {
+            return Self{ .node = elt.node, .indent = self.indent };
+        }
+
         fn nest(self: Self, elt: EltRef) Self {
             return Self{ .node = elt.node, .indent = self.indent + 1 };
         }
@@ -140,11 +144,10 @@ pub const ASTNode = union(enum) {
                 .compound => |cmp| {
                     for (cmp) |stm| {
                         try self.pad(w);
-                        try w.print("{f};\n", .{stm});
+                        try w.print("{f};\n", .{self.wrap(stm)});
                     }
                 },
                 .IF => |i| {
-                    try self.pad(w);
                     try w.print("IF {f};\n", .{i.cond});
                     try w.print("{f}", .{self.nest(i.THEN)});
                     if (i.ELSE) |e| {
