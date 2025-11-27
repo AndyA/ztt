@@ -52,11 +52,14 @@ fn parseCompound(p: *ASTParser) Error!EltRef {
         while (!p.eof() and p.state.tok.? == .literal) {
             const state = p.state;
             try p.advance();
-            const node = try p.newNode(
-                .{ .literal = swallowWhite(state.tok.?.literal, swallow_start, isSwallow(p)) },
-                state.loc,
-            );
-            try list.append(p.gpa, node);
+            const lit = swallowWhite(state.tok.?.literal, swallow_start, isSwallow(p));
+            if (lit.len > 0) {
+                const node = try p.newNode(
+                    .{ .literal = lit },
+                    state.loc,
+                );
+                try list.append(p.gpa, node);
+            }
             swallow_start = false;
         }
         if (p.eof())
@@ -197,6 +200,16 @@ test "template" {
         \\END;
         \\
         },
+        .{ .src = 
+        \\[% IF (n = name) -%]
+        \\  [%- "Hello $n" -%]
+        \\[%- END %]
+        , .want = 
+        \\IF (n = name);
+        \\    ("Hello " _ n);
+        \\END;
+        \\
+        },
     };
 
     for (cases) |case| {
@@ -215,9 +228,9 @@ test "template" {
         try w.writer.print("{f}", .{elt});
         var output = w.toArrayList();
         defer output.deinit(gpa);
-        // std.debug.print(">> {any}\n", .{elt});
-        // std.debug.print("++ {s} ++\n", .{case.want});
-        // std.debug.print("-- {s} --\n", .{output.items});
+        std.debug.print(">> {any}\n", .{elt});
+        std.debug.print("++ {s} ++\n", .{case.want});
+        std.debug.print("-- {s} --\n", .{output.items});
         try testing.expectEqualDeep(case.want, output.items);
     }
 }
