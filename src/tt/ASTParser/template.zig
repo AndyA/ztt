@@ -189,6 +189,14 @@ test "template" {
         \\END;
         \\
         },
+        .{ .src = 
+        \\[% IF (n = name); "Hello $n"; END %]
+        , .want = 
+        \\IF (n = name);
+        \\    ("Hello " _ n);
+        \\END;
+        \\
+        },
     };
 
     for (cases) |case| {
