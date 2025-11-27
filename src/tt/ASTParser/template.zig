@@ -230,9 +230,8 @@ test "template" {
         try w.writer.print("{f}", .{elt});
         var output = w.toArrayList();
         defer output.deinit(gpa);
-        std.debug.print("\n>> {any}\n\n", .{elt});
-        std.debug.print("+<{s}>+\n\n", .{case.want});
-        std.debug.print("-<{s}>-\n", .{output.items});
+        std.debug.print("got:\n<{s}>\n\n", .{output.items});
+        std.debug.print("want:\n<{s}>\n\n", .{case.want});
         try testing.expectEqualDeep(case.want, output.items);
     }
 }
