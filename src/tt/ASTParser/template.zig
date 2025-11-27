@@ -181,6 +181,14 @@ test "template" {
         \\END;
         \\
         },
+        .{ .src = 
+        \\[% UNLESS a; "Hello"; END %]
+        , .want = 
+        \\IF NOT a;
+        \\    "Hello";
+        \\END;
+        \\
+        },
     };
 
     for (cases) |case| {
