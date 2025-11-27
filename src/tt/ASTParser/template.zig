@@ -69,6 +69,8 @@ fn parseCompound(p: *ASTParser) Error!EltRef {
         try p.advance();
         if (isBlockEnd(p))
             break;
+        if (p.eof())
+            return Error.UnexpectedEOF;
         try list.append(p.gpa, try parseStatement(p));
     }
 
@@ -185,7 +187,7 @@ test "template" {
         \\
         },
         .{ .src = 
-        \\[% UNLESS a; "Hello"; END %]
+        \\[% UNLESS a %]Hello[% END %]
         , .want = 
         \\IF NOT a;
         \\    "Hello";
