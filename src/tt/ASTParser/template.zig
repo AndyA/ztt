@@ -80,7 +80,7 @@ fn parseCompound(p: *ASTParser) Error!EltRef {
     );
 }
 
-fn parseIF(p: *ASTParser) Error!EltRef {
+fn parseIFBody(p: *ASTParser) Error!EltRef {
     const state = p.state;
     try p.advance();
     var cond = try expr.parseExpr(p);
@@ -90,12 +90,36 @@ fn parseIF(p: *ASTParser) Error!EltRef {
             state.loc,
         );
     const THEN = try parseCompound(p);
-    assert(p.state.tok.?.keyword == .END);
+    switch (p.state.tok.?.keyword) {
+        .END => return try p.newNode(
+            .{ .IF = .{ .cond = cond, .THEN = THEN } },
+            state.loc,
+        ),
+        .ELSE => {
+            try p.advance();
+            const ELSE = try parseCompound(p);
+            return try p.newNode(
+                .{ .IF = .{ .cond = cond, .THEN = THEN, .ELSE = ELSE } },
+                state.loc,
+            );
+        },
+        .ELSIF => {
+            const ELSE = try parseIFBody(p);
+            return try p.newNode(
+                .{ .IF = .{ .cond = cond, .THEN = THEN, .ELSE = ELSE } },
+                state.loc,
+            );
+        },
+        else => return Error.SyntaxError,
+    }
+}
+
+pub fn parseIF(p: *ASTParser) Error!EltRef {
+    const IF = try parseIFBody(p);
+    if (p.state.tok.?.keyword != .END)
+        return Error.SyntaxError;
     try p.advance();
-    return try p.newNode(
-        .{ .IF = .{ .cond = cond, .THEN = THEN } },
-        state.loc,
-    );
+    return IF;
 }
 
 fn parseStatement(p: *ASTParser) Error!EltRef {
@@ -212,6 +236,40 @@ test "template" {
         \\END;
         \\
         },
+        .{ .src = 
+        \\[% IF name -%]
+        \\  [%- "Hello $name" -%]
+        \\[%- ELSE -%]
+        \\  [%- "Who?" -%]
+        \\[%- END %]
+        , .want = 
+        \\IF name;
+        \\    ("Hello " _ name);
+        \\ELSE;
+        \\    "Who?";
+        \\END;
+        \\
+        },
+        // .{ .src =
+        // \\[% IF name -%]
+        // \\  [%- "Hello $name" -%]
+        // \\[%- ELSIF title -%]
+        // \\  [%- "Hi $title" -%]
+        // \\[%- ELSE -%]
+        // \\  [%- "Who?" -%]
+        // \\[%- END %]
+        // , .want =
+        // \\IF name;
+        // \\    ("Hello " _ name);
+        // \\ELSE;
+        // \\    IF title;
+        // \\        ("Hi " _ title);
+        // \\    ELSE;
+        // \\        "Who?";
+        // \\    END;
+        // \\END;
+        // \\
+        // },
     };
 
     for (cases) |case| {

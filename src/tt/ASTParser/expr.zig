@@ -311,7 +311,10 @@ fn parseAtom(p: *ASTParser) Error!EltRef {
                 .@"{" => {
                     return try parseObject(p);
                 },
-                else => return Error.SyntaxError,
+                else => {
+                    // std.debug.print("token: {s}\n", .{@tagName(kw)});
+                    return Error.SyntaxError;
+                },
             }
         },
         .int => |n| {
