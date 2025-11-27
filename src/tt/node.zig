@@ -39,6 +39,11 @@ pub const ASTNode = union(enum) {
         ELSE: ?EltRef = null, // block
     },
 
+    WHILE: struct {
+        cond: EltRef, // expr
+        body: EltRef, // block
+    },
+
     pub fn format(self: ASTNode, w: *Io.Writer) Io.Writer.Error!void {
         try w.print("{f}", .{Indented{ .node = self, .indent = 0 }});
     }
@@ -155,6 +160,12 @@ pub const ASTNode = union(enum) {
                         try w.print("ELSE;\n", .{});
                         try w.print("{f}", .{self.nest(e)});
                     }
+                    try self.pad(w);
+                    try w.print("END", .{});
+                },
+                .WHILE => |wh| {
+                    try w.print("WHILE {f};\n", .{wh.cond});
+                    try w.print("{f}", .{self.nest(wh.body)});
                     try self.pad(w);
                     try w.print("END", .{});
                 },

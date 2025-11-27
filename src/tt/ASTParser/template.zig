@@ -123,18 +123,38 @@ fn parseIFBody(p: *ASTParser) Error!EltRef {
     }
 }
 
-pub fn parseIF(p: *ASTParser) Error!EltRef {
-    const IF = try parseIFBody(p);
-    if (p.state.tok.?.keyword != .END)
+fn needEND(p: *ASTParser) Error!void {
+    if (p.eof())
+        return Error.UnexpectedEOF;
+    const tok = p.state.tok.?;
+    if (tok != .keyword or tok.keyword != .END)
         return Error.SyntaxError;
     try p.advance();
+}
+
+fn parseIF(p: *ASTParser) Error!EltRef {
+    const IF = try parseIFBody(p);
+    try needEND(p);
     return IF;
+}
+
+fn parseWHILE(p: *ASTParser) Error!EltRef {
+    const state = p.state;
+    try p.advance();
+    const cond = try expr.parseExpr(p);
+    const body = try parseCompound(p);
+    try needEND(p);
+    return try p.newNode(
+        .{ .WHILE = .{ .cond = cond, .body = body } },
+        state.loc,
+    );
 }
 
 fn parseStatement(p: *ASTParser) Error!EltRef {
     switch (p.state.tok.?) {
         .keyword => |kw| switch (kw) {
             .IF, .UNLESS => return try parseIF(p),
+            .WHILE => return try parseWHILE(p),
             else => {},
         },
         else => {},
@@ -292,6 +312,14 @@ test "template" {
         \\    ELSE;
         \\        "Who?";
         \\    END;
+        \\END;
+        \\
+        },
+        .{ .src = 
+        \\[% WHILE (n = next_name()); "Hello $n"; END %]
+        , .want = 
+        \\WHILE (n = next_name());
+        \\    ("Hello " _ n);
         \\END;
         \\
         },
