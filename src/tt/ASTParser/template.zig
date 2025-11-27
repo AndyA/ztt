@@ -179,7 +179,6 @@ test "template" {
         \\IF a;
         \\    "Hello";
         \\END;
-        \\;
         \\
         },
     };
@@ -200,9 +199,9 @@ test "template" {
         try w.writer.print("{f}", .{elt});
         var output = w.toArrayList();
         defer output.deinit(gpa);
-        std.debug.print(">> {any}\n", .{elt});
-        std.debug.print("++ {s} ++\n", .{case.want});
-        std.debug.print("-- {s} --\n", .{output.items});
+        // std.debug.print(">> {any}\n", .{elt});
+        // std.debug.print("++ {s} ++\n", .{case.want});
+        // std.debug.print("-- {s} --\n", .{output.items});
         try testing.expectEqualDeep(case.want, output.items);
     }
 }

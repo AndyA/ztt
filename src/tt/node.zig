@@ -154,7 +154,7 @@ pub const ASTNode = union(enum) {
                         try w.print("{f}", .{self.nest(e)});
                     }
                     try self.pad(w);
-                    try w.print("END;\n", .{});
+                    try w.print("END", .{});
                 },
             }
         }
