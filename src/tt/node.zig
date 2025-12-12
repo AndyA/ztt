@@ -67,22 +67,20 @@ pub const ASTNode = union(enum) {
 
         fn formatString(w: *Io.Writer, str: []const u8) Io.Writer.Error!void {
             for (str) |c| {
-                switch (c) {
-                    0x00...0x1f, 0x7f, '\\', '$', '"' => {
-                        switch (c) {
-                            0x07 => try w.print("\\a", .{}),
-                            0x08 => try w.print("\\b", .{}),
-                            0x09 => try w.print("\\t", .{}),
-                            0x0a => try w.print("\\n", .{}),
-                            0x0c => try w.print("\\f", .{}),
-                            0x0d => try w.print("\\r", .{}),
-                            0x1b => try w.print("\\e", .{}),
-                            '$', '\\', '"' => try w.print("\\{c}", .{c}),
-                            else => try w.print("\\x{x:0>2}", .{c}),
-                        }
+                try switch (c) {
+                    0x00...0x1f, 0x7f, '\\', '$', '"' => switch (c) {
+                        0x07 => w.print("\\a", .{}),
+                        0x08 => w.print("\\b", .{}),
+                        0x09 => w.print("\\t", .{}),
+                        0x0a => w.print("\\n", .{}),
+                        0x0c => w.print("\\f", .{}),
+                        0x0d => w.print("\\r", .{}),
+                        0x1b => w.print("\\e", .{}),
+                        '$', '\\', '"' => w.print("\\{c}", .{c}),
+                        else => w.print("\\x{x:0>2}", .{c}),
                     },
-                    else => try w.print("{c}", .{c}),
-                }
+                    else => w.print("{c}", .{c}),
+                };
             }
         }
 
